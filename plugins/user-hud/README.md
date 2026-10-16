@@ -4,6 +4,23 @@
 
 A control panel tucked into the bottom-right corner, above the Claude Code prompt: where your tokens go, model and effort pickers, prompt-cache countdown, the settings you toggle most, and handoff buttons.
 
+## Modules
+
+The panel is four modules, each on by default:
+
+| Module | What it is |
+| --- | --- |
+| `cache` | the cache countdown, Keep warm, the expiry alerts and the overage warning; `/cache`, `/keepwarm` |
+| `pickers` | the model and effort pickers; `/hud-styles` |
+| `tokens` | where the tokens go: the TOKENS row and the Tokens pane; `/tokens` |
+| `handoff` | Write handoff and Read handoff; `/read-handoff` |
+
+Turn a module off and it leaves the panel and the closed row, its commands are not registered, and none of its work runs: with `cache` off nothing counts down, alerts or pings, and with `tokens` off nothing is counted. Turn every module off and the band draws nothing.
+
+- `/hud modules` lists them, and `/hud <module> on|off` switches one (`/hud tokens off`).
+- `/config` has the same switches, as **Module: cache** and so on.
+- The [`mods` script](../../README.md#install-and-update) asks which modules to turn on when it installs or updates user-hud.
+
 ## The corner
 
 Closed, it is one row at the right edge:

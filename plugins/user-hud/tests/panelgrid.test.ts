@@ -83,3 +83,16 @@ test('the action under the pointer is underlined, its spaces left plain', () => 
   const rows = underlined({ rows: [l.row], hits: [{ id: 'go', y: 0, ...l.spans[0]! }] }, 'go')
   expect(rows[0]!.filter(r => r.isUnderline).map(r => r.text)).toEqual(['Go'])
 })
+
+test('a part whose module is off is left out, with its divider and its hotkey', () => {
+  const g = bandGrid({ ...VIEW, pickers: null, tokens: null, handoff: null })
+  expect(plain(g).some(l => /MODEL|EFFORT|TOKENS|H A N D O F F|Write handoff/.test(l))).toBe(false)
+  expect(plain(g)).toContainEqual(expect.stringMatching(/^── C A C H E/))
+  expect(g.keys).toEqual({ w: 'keepwarm' })
+  const onlyTokens = bandGrid({ ...VIEW, pickers: null, cache: null, handoff: null, settings: [], keepWarm: 'none' })
+  expect(plain(onlyTokens).filter(l => !/^─|user-hud/.test(l))).toEqual([expect.stringMatching(/^TOKENS /)])
+  expect(onlyTokens.keys).toEqual({ t: 'tokens' })
+  // Folded for a short band, no settings leave no empty row.
+  const compact = bandGrid({ ...VIEW, pickers: null, cache: null, handoff: null, settings: [], keepWarm: 'none', maxRows: 1 })
+  expect(plain(compact).map(l => l.trim())).toEqual([expect.stringMatching(/^TOKENS/), '◆ user-hud ▾'])
+})

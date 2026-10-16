@@ -29,13 +29,14 @@ export type BandView = {
   /** Keep warm: not offered, offered quietly (the cache is warm), or urged (it is cooling). */
   keepWarm: 'none' | 'quiet' | 'urged'
   isPinging: boolean
-  pickers: PickerProps
+  /** Each part of the panel, null where its module is off: the panel leaves it out. */
+  pickers: PickerProps | null
   /** The tokens row: the stacked bar's runs of cells, the total, the two largest groups. */
-  tokens: { segments: { color: string; cells: number }[]; total: string; leaders: string[] }
+  tokens: { segments: { color: string; cells: number }[]; total: string; leaders: string[] } | null
   /** The cache line, left of Keep warm. */
-  cache: Run[]
+  cache: Run[] | null
   settings: Setting[]
-  handoff: { hasNewest: boolean; note: string }
+  handoff: { hasNewest: boolean; note: string } | null
 }
 
 export type Band = Grid & { keys: Record<string, string>; width: number }
@@ -84,12 +85,12 @@ function closedRow(v: BandView): Band {
   return { ...b.grid, keys: kw ? { w: 'keepwarm' } : {}, width }
 }
 
-function tokensRow(v: BandView, width: number): ReturnType<typeof line> {
+function tokensRow(tokens: NonNullable<BandView['tokens']>, width: number): ReturnType<typeof line> {
   const head: Run[] = runs(pad('TOKENS', NAME_WIDTH), { isDim: true })
-  if (v.tokens.segments.length === 0) put(head, 'counting from the next request', { isDim: true })
-  else for (const s of v.tokens.segments) put(head, ' '.repeat(s.cells), { bg: s.color })
+  if (tokens.segments.length === 0) put(head, 'counting from the next request', { isDim: true })
+  else for (const s of tokens.segments) put(head, ' '.repeat(s.cells), { bg: s.color })
   const left: Piece[] = [{ runs: head, action: null }]
-  if (v.tokens.segments.length > 0) left.push(text(v.tokens.total), ...v.tokens.leaders.map(l => text(`· ${l}`, { isDim: true })))
+  if (tokens.segments.length > 0) left.push(text(tokens.total), ...tokens.leaders.map(l => text(`· ${l}`, { isDim: true })))
   return line(width, left, [keyed('t', 'Details', 'tokens')])
 }
 
@@ -104,7 +105,7 @@ function settingsLines(v: BandView, width: number) {
   const pills = v.settings.map(s =>
     s.kind === 'toggle' ? pill(`${s.isOn ? '●' : '○'} ${s.label}`, `set:${s.key}`, s.isOn ? 'success' : 'subtle') : pill(s.value, `set:${s.key}`, 'subtle'),
   )
-  const rows: Piece[][] = [[]]
+  const rows: Piece[][] = pills.length > 0 ? [[]] : []
   let used = 0
   for (const p of pills) {
     const w = widthOf(p.runs)
@@ -122,40 +123,48 @@ function openPanel(v: BandView, fit: Fit): Band {
   const W = v.width
   const b = builder()
   const rule = (title: string) => b.add(runs(sectionRule(title, W), { isDim: true }))
-  b.append(layout(v.pickers))
-  const t = tokensRow(v, W)
-  b.add(t.row, t.spans)
-  if (fit === 'full') rule('CACHE')
-  const cacheRight = v.isPinging ? [text('pinging…', { isDim: true })] : [keepWarm(v)].filter((p): p is Piece => p !== null)
-  const c = line(W, [{ runs: v.cache, action: null }], cacheRight)
-  b.add(c.row, c.spans)
+  if (v.pickers) b.append(layout(v.pickers))
+  if (v.tokens) {
+    const t = tokensRow(v.tokens, W)
+    b.add(t.row, t.spans)
+  }
+  if (v.cache) {
+    if (fit === 'full') rule('CACHE')
+    const cacheRight = v.isPinging ? [text('pinging…', { isDim: true })] : [keepWarm(v)].filter((p): p is Piece => p !== null)
+    const c = line(W, [{ runs: v.cache, action: null }], cacheRight)
+    b.add(c.row, c.spans)
+  }
   if (v.overage) {
     const o = line(W, [text('⚠ overage', { color: 'warning' }), text(`${v.overage} · a new chat costs less per turn`, { isDim: true })], [pill('New chat', 'newchat', 'subtle')])
     b.add(o.row, o.spans)
   }
-  if (fit !== 'compact') {
+  if (fit === 'compact') {
+    for (const r of settingsLines(v, W)) b.add(r.row, r.spans)
+  } else if (v.settings.length > 0) {
     rule('SETTINGS')
     for (const s of v.settings) {
       const r = settingRow(s, W)
       b.add(r.row, r.spans)
     }
-  } else {
-    for (const r of settingsLines(v, W)) b.add(r.row, r.spans)
   }
-  if (fit === 'full') rule('HANDOFF')
-  const h = line(W, [
-    text('✦', { color: 'claude' }),
-    keyed('h', 'Write handoff', 'handoff'),
-    text(' '),
-    ...(v.handoff.hasNewest ? [text('◆', { color: 'suggestion' }), keyed('r', 'Read handoff', 'readhandoff'), text(' ')] : []),
-    text(v.handoff.note, { isDim: true }),
-  ])
-  b.add(h.row, h.spans)
+  const keys: Record<string, string> = {}
+  if (v.tokens) keys.t = 'tokens'
+  if (v.handoff) {
+    if (fit === 'full') rule('HANDOFF')
+    const h = line(W, [
+      text('✦', { color: 'claude' }),
+      keyed('h', 'Write handoff', 'handoff'),
+      text(' '),
+      ...(v.handoff.hasNewest ? [text('◆', { color: 'suggestion' }), keyed('r', 'Read handoff', 'readhandoff'), text(' ')] : []),
+      text(v.handoff.note, { isDim: true }),
+    ])
+    b.add(h.row, h.spans)
+    keys.h = 'handoff'
+    if (v.handoff.hasNewest) keys.r = 'readhandoff'
+  }
   if (fit === 'full') b.add(runs(footerRule('user-hud', W), { isDim: true }))
   const tr = line(W, [], [tab(true)])
   b.add(tr.row, tr.spans)
-  const keys: Record<string, string> = { h: 'handoff', t: 'tokens' }
-  if (v.handoff.hasNewest) keys.r = 'readhandoff'
   if (v.keepWarm !== 'none' && !v.isPinging) keys.w = 'keepwarm'
   return { ...b.grid, keys, width: W }
 }

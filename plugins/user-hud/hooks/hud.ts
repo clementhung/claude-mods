@@ -17,6 +17,43 @@ export const EFFORTS: readonly { level: Effort; label: string }[] = [
   { level: 'max', label: 'Max' },
 ]
 
+/**
+ * The panel's modules, each switched on or off whole: its part of the panel, its commands and the work
+ * behind it. `key` is its /config row.
+ */
+export const MODULES = [
+  { id: 'cache', key: 'cacheModule', desc: 'cache countdown, keep warm, alerts, overage' },
+  { id: 'pickers', key: 'pickersModule', desc: 'model and effort pickers' },
+  { id: 'tokens', key: 'tokensModule', desc: 'where the tokens go' },
+  { id: 'handoff', key: 'handoffModule', desc: 'write and read handoff notes' },
+] as const
+
+export type ModuleId = (typeof MODULES)[number]['id']
+export type Modules = Record<ModuleId, boolean>
+
+/** Each module on unless its /config row says off. */
+export function modulesFrom(o: Record<string, unknown>): Modules {
+  return Object.fromEntries(MODULES.map(m => [m.id, o[m.key] !== false])) as Modules
+}
+
+export type HudArgs = { kind: 'toggle' } | { kind: 'list' } | { kind: 'set'; id: ModuleId; isOn: boolean } | { kind: 'unknown' }
+
+/** `/hud` toggles the panel, `/hud modules` lists the modules, `/hud <module> on|off` switches one. */
+export function parseHudArgs(args: string): HudArgs {
+  const words = args.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return { kind: 'toggle' }
+  if (words.length === 1 && words[0] === 'modules') return { kind: 'list' }
+  const m = MODULES.find(x => x.id === words[0])
+  if (m && words.length === 2 && (words[1] === 'on' || words[1] === 'off')) return { kind: 'set', id: m.id, isOn: words[1] === 'on' }
+  return { kind: 'unknown' }
+}
+
+/** `/hud modules`: one line per module, on or off, then how to switch one. */
+export function modulesText(modules: Modules): string {
+  const lines = MODULES.map(m => `${modules[m.id] ? '● on ' : '○ off'}  ${m.id.padEnd(8)} ${m.desc}`)
+  return [...lines, 'Switch one with /hud <module> on|off, or in /config.'].join('\n')
+}
+
 /** Seconds of cache life left when the alert fires: what the Alert at pill cycles through. */
 export const WARN_STEPS = [60, 120, 300] as const
 

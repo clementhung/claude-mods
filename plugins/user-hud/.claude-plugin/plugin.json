@@ -1,10 +1,10 @@
 {
   "name": "user-hud",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "author": {
     "name": "Polar"
   },
-  "description": "A control panel tucked into the corner above the Claude Code prompt: where your tokens go (files, chat, MCP, shell, skills and plugins, subagents and more), model and effort pickers in three styles, prompt-cache countdown with a 2-minute keep-warm alert, quick settings, and handoff buttons.",
+  "description": "A control panel tucked into the corner above the Claude Code prompt, in four modules you turn on or off: where your tokens go (files, chat, MCP, shell, skills and plugins, subagents and more), model and effort pickers in three styles, prompt-cache countdown with a 2-minute keep-warm alert, quick settings, and handoff buttons.",
   "types": "./types/index.d.ts",
   "license": "MIT",
   "keywords": [
@@ -16,6 +16,30 @@
     "mod"
   ],
   "userConfig": {
+    "cacheModule": {
+      "type": "boolean",
+      "title": "Module: cache",
+      "description": "The prompt cache countdown, Keep warm, the expiry alerts and the overage warning, with /cache and /keepwarm. Off, none of it runs.",
+      "default": true
+    },
+    "pickersModule": {
+      "type": "boolean",
+      "title": "Module: pickers",
+      "description": "The model and effort pickers, with /hud-styles.",
+      "default": true
+    },
+    "tokensModule": {
+      "type": "boolean",
+      "title": "Module: tokens",
+      "description": "Where the session's tokens go: the TOKENS row, the Tokens pane and /tokens. Off, nothing is counted.",
+      "default": true
+    },
+    "handoffModule": {
+      "type": "boolean",
+      "title": "Module: handoff",
+      "description": "Write handoff and Read handoff, with /read-handoff.",
+      "default": true
+    },
     "warnSeconds": {
       "type": "number",
       "title": "Alert when this many seconds are left",

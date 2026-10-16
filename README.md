@@ -4,49 +4,59 @@ Polar's Claude Code mods, as one plugin marketplace (`polar-mods`) with four plu
 
 | Plugin | What it does |
 | --- | --- |
-| [user-hud](plugins/user-hud) | A control panel tucked into the corner above the prompt: where your tokens go (files, chat, MCP, shell, skills and plugins, subagents and more, split from the API's real counts), model and effort pickers in three styles (blue to orange by model, grey to rainbow by effort, Ultracode included), prompt-cache countdown with a 2-minute keep-warm alert, quick settings, and Write / Read handoff buttons. |
+| [user-hud](plugins/user-hud) | A control panel tucked into the corner above the prompt, in four modules you turn on or off: where your tokens go (files, chat, MCP, shell, skills and plugins, subagents and more, split from the API's real counts), model and effort pickers in three styles (blue to orange by model, grey to rainbow by effort, Ultracode included), prompt-cache countdown with a 2-minute keep-warm alert, quick settings, and Write / Read handoff buttons. |
 | [code-reference](plugins/code-reference) | Replies that point at code. Ask with `/code-reference` (a question, or a PR to review; only the command triggers it) and the reply comes back as prose linked to the code, a row of numbered boxes under each section; a click shows that code in a pane beside it, read from disk. Drawn the same in the terminal and the desktop app. Was pr-review-ui. |
 | [ask](plugins/ask) | A side chat in a pane that forks the main chat to answer, so it knows the whole session; nothing goes back unless you send it (`s`). It scrolls, and draws Mermaid diagrams: box art in the terminal, SVG in the desktop app. `/ask`, `/draw`. |
 | [delegator](plugins/delegator) | Every subagent Claude starts waits for your approval: approve, refuse, approve all for the turn, change its model (suggested by the task's complexity: Haiku for lookups, Sonnet for building, Opus for design) or add a note to its task. A pane lists the agents waiting, the full task and recent decisions. `/delegator on`, `/delegator off`. |
 
 user-hud draws on the band above the prompt; code-reference, ask and delegator draw in panes of their own, so they work together or alone.
 
-## Install
+## Get started
 
-In a terminal:
+You need Claude Code 2.1.287 or later, and Python 3.9 or later (macOS includes it).
 
-```
-claude plugin marketplace add hyperbola-bear/claude-mods
-claude plugin install user-hud@polar-mods
-claude plugin install code-reference@polar-mods
-claude plugin install ask@polar-mods
-claude plugin install delegator@polar-mods
-```
+1. Run the `mods` script in a terminal:
 
-Then start a new Claude Code session. Mods need Claude Code 2.1.287 or later.
+   ```
+   python3 <(curl -fsSL https://raw.githubusercontent.com/hyperbola-bear/claude-mods/main/mods)
+   ```
 
-## Update
+2. Tick the mods you want with the arrow keys and space, then press Enter.
+3. If you ticked user-hud, pick its modules: cache, pickers, tokens, handoff.
+4. Check the list of changes and press Enter to go ahead.
+5. Start a new Claude Code session. The mods are loaded.
 
-Two plugins were renamed. If you installed either under its old name, swap it once:
-
-```
-claude plugin uninstall user-hd@polar-mods
-claude plugin install user-hud@polar-mods
-claude plugin uninstall pr-review-ui@polar-mods
-claude plugin install code-reference@polar-mods
-```
-
-user-hud was user-hd before 1.2.0; code-reference was pr-review-ui before 2.0.0.
-
-Then, for every update:
+To get new versions later, run it again with `--update`:
 
 ```
-claude plugin marketplace update polar-mods
-claude plugin update user-hud@polar-mods
-claude plugin update code-reference@polar-mods
-claude plugin update ask@polar-mods
-claude plugin update delegator@polar-mods
+python3 ~/.claude/plugins/marketplaces/polar-mods/mods --update
 ```
+
+Run the same script without `--update` to add or remove mods, or to change user-hud's modules. The next section covers its options.
+
+## Install and update
+
+`mods` installs, updates and removes them from one checklist. In a terminal:
+
+```
+python3 <(curl -fsSL https://raw.githubusercontent.com/hyperbola-bear/claude-mods/main/mods)
+```
+
+It adds the `polar-mods` marketplace if you have not yet, refreshes it, and lists every mod with what you have and what is new. Tick the ones you want (space, arrows, Enter): it installs the new ones, updates the ones you have, and removes the ones you untick. For a mod with modules, user-hud's cache, pickers, tokens and handoff, it then asks which to turn on. It shows what it will do and asks before it does it. Then start a new Claude Code session. Mods need Claude Code 2.1.287 or later.
+
+Once the marketplace is added, the script is also on disk:
+
+```
+python3 ~/.claude/plugins/marketplaces/polar-mods/mods
+```
+
+- `--update` updates every mod you have, with no questions.
+- `--list` shows each mod's state and changes nothing.
+- `--dry-run` shows the `claude plugin` commands instead of running them.
+
+Two plugins were renamed: user-hud was user-hd before 1.2.0, and code-reference was pr-review-ui before 2.0.0. `mods` lists an old install as renamed, ticks its replacement, and removes the old one.
+
+By hand, the same is `claude plugin marketplace add hyperbola-bear/claude-mods`, then `claude plugin install <mod>@polar-mods` for each one. To update, run `claude plugin marketplace update polar-mods`, then `claude plugin update <mod>@polar-mods`.
 
 ## Develop
 
