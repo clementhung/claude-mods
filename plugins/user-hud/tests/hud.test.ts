@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { asEffort, footerRule, lifeBar, modelAlias, modelLabel, nextWarn, sectionRule } from '../hooks/hud.ts'
+import { asEffort, footerRule, lifeBar, modelAlias, modelLabel, modulesFrom, nextWarn, parseHudArgs, sectionRule } from '../hooks/hud.ts'
 
 test('models are recognised however /model or a request spells them', () => {
   expect(modelAlias('claude-sonnet-5-5')).toBe('sonnet')
@@ -36,4 +36,18 @@ test('the life bar fills with the time left', () => {
   expect(lifeBar(300_000, 300_000)).toEqual({ on: '▰▰▰▰▰▰▰▰▰▰', off: '' })
   expect(lifeBar(150_000, 300_000)).toEqual({ on: '▰▰▰▰▰', off: '▱▱▱▱▱' })
   expect(lifeBar(-5, 300_000)).toEqual({ on: '', off: '▱▱▱▱▱▱▱▱▱▱' })
+})
+
+test('/hud arguments: nothing toggles the panel, modules lists them, <module> on|off switches one', () => {
+  expect(parseHudArgs('')).toEqual({ kind: 'toggle' })
+  expect(parseHudArgs(' Modules ')).toEqual({ kind: 'list' })
+  expect(parseHudArgs('tokens off')).toEqual({ kind: 'set', id: 'tokens', isOn: false })
+  expect(parseHudArgs('CACHE On')).toEqual({ kind: 'set', id: 'cache', isOn: true })
+  expect(parseHudArgs('tokens')).toEqual({ kind: 'unknown' })
+  expect(parseHudArgs('colors off')).toEqual({ kind: 'unknown' })
+})
+
+test('every module is on unless its /config row says off', () => {
+  expect(modulesFrom({})).toEqual({ cache: true, pickers: true, tokens: true, handoff: true })
+  expect(modulesFrom({ tokensModule: false, cacheModule: 'false' })).toEqual({ cache: true, pickers: true, tokens: false, handoff: true })
 })

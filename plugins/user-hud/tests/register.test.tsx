@@ -104,6 +104,8 @@ type World = {
   alertChoice: string
   files: Record<string, { text: string; mtimeMs: number }>
   commands: string[]
+  /** Slash commands the plugin registered. */
+  registered: string[]
   toasts: string[]
   argv: string[][]
   forks: string[]
@@ -181,6 +183,7 @@ function world(on: On): World {
     alertChoice: 'timeout',
     files: {},
     commands: [],
+    registered: [],
     toasts: [],
     argv: [],
     forks: [],
@@ -249,7 +252,10 @@ function world(on: On): World {
     w.opens.push(e.id)
     return { value: { isPlaced: true as const } }
   })
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('command.register', ($, e) => {
+    w.registered.push(e.name)
+    return { value: { command: e.name } }
+  })
   on('command.list', () => ({ value: w.commands.map(name => ({ name, description: '', source: 'user' as const })) }))
   on('prompt.submit', ($, e) => {
     w.submits.push(e.text)
@@ -1173,3 +1179,76 @@ test('/hud-styles shows Rail, Ladder and Meter side by side, the same grid on ev
   expect(w.commandLines).toEqual(['/effort max'])
 })
 
+
+test('a module switched off leaves its part out of the panel, its commands unregistered and its work undone', { options: { tokensModule: false, pickersModule: false, handoffModule: false } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  expect(w.registered.sort()).toEqual(['cache', 'hud', 'keepwarm'])
+  await session($, w)
+  await request($, w, 120_000)
+  for (const surface of SURFACES) {
+    const band = await $.ui.mount({ plugin: 'user-hud', surface, component: 'AbovePrompt', props: { ...BAND(), maxRows: 30 } })
+    // Closed: the countdown and the tab, no tokens and no model.
+    expect(await linesOf(band)).toEqual(['◆ 5:00   ◆ user-hud ▴ '])
+    await act(band, 'panel')
+    expect(await shows(band, /cache 5:00/)).toBe(true)
+    for (const key of ['set:autoKeepWarm', 'set:sound', 'keepwarm']) expect(await has(band, key), key).toBe(true)
+    for (const key of ['tokens', 'handoff', 'set:selectorStyle', 'pick:model:opus']) expect(await has(band, key), key).toBe(false)
+    expect(await shows(band, /TOKENS|MODEL|EFFORT|H A N D O F F/)).toBe(false)
+    expect((await cellsOf(band))?.keys).toEqual({ w: 'keepwarm' })
+    await act(band, 'panel')
+    await band.unmount()
+  }
+  // Nothing was counted, nor any handoff note looked for.
+  expect(w.argv.filter(a => a[0] !== 'osascript' && a[0] !== 'afplay')).toEqual([])
+  const pane = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'Pane', requestId: 'tokens', props: { ...PANE_PROPS, title: 'Tokens' } })
+  expect(await shows(pane, /No tokens counted yet/, 'tokens')).toBe(true)
+})
+
+test('with the cache module off nothing counts down, alerts or pings', { options: { cacheModule: false, autoKeepWarm: true } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  expect(w.registered).not.toContain('cache')
+  expect(w.registered).not.toContain('keepwarm')
+  await request($, w, 120_000)
+  await w.clock.advance(300_000)
+  expect(w.toasts.filter(t => t.includes('Prompt cache'))).toEqual([])
+  expect(w.argv).toEqual([])
+  expect(w.forks).toEqual([])
+  const band = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND(), maxRows: 30 } })
+  expect(await shows(band, '◆')).toBe(true) // the tab
+  expect(await shows(band, /cache|5:00/)).toBe(false)
+  await act(band, 'panel')
+  expect(await shows(band, /C A C H E|keep warm/i)).toBe(false)
+  // The pickers' style is the one setting left.
+  expect((await cellsOf(band))?.hits.filter(h => h.id.startsWith('set:')).map(h => h.id)).toEqual(['set:selectorStyle'])
+})
+
+test('/hud modules lists the modules and /hud <module> on|off writes its /config row', { options: { tokensModule: false } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  const hud = (args: string) => $.command.run({ command: 'hud', args, ...RUN })
+  expect((await hud('modules')).text).toMatch(/^● on {3}cache .*\n● on {3}pickers .*\n○ off {2}tokens .*\n● on {3}handoff .*\nSwitch one with \/hud <module> on\|off, or in \/config\.$/)
+  expect((await hud('tokens on')).text).toBe('The tokens module is on.')
+  expect(w.configSets).toEqual([['user-hud.tokensModule', true]])
+  expect((await hud('tokens on')).text).toBe('The tokens module is already on.')
+  expect((await hud('pickers off')).text).toBe('The pickers module is off.')
+  expect(w.configSets.at(-1)).toEqual(['user-hud.pickersModule', false])
+  const band = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND(), maxRows: 30 } })
+  await act(band, 'panel')
+  expect(await has(band, 'tokens')).toBe(true)
+  expect(await has(band, 'pick:model:opus')).toBe(false)
+  expect((await hud('everything off')).text).toMatch(/^Usage: \/hud/)
+  // A row the organization owns stays as it is.
+  w.lockedRows.push('user-hud.handoffModule')
+  expect((await hud('handoff off')).text).toBe('The handoff module stays on.')
+})
+
+test('with every module off the band draws nothing of its own and /hud says how to turn one on', { options: { cacheModule: false, pickersModule: false, tokensModule: false, handoffModule: false } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  expect(w.registered).toEqual(['hud'])
+  const band = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'AbovePrompt', props: BAND() })
+  expect(await cellsOf(band)).toBe(undefined)
+  expect((await $.command.run({ command: 'hud', args: '', ...RUN })).text).toMatch(/Every user-hud module is off/)
+})

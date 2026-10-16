@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""mods: install, update and remove the mods in a Claude Code plugin marketplace from one checklist.
+
+    mods              tick the mods you want; it installs, updates, enables and removes to match,
+                      then asks which modules to turn on for any mod that has them (user-hud)
+    mods --list       each mod, what you have and what the marketplace offers
+    mods --update     update every mod you have, no questions
+    mods --dry-run    show the claude commands instead of running them
+
+It drives the `claude plugin` CLI, so it changes nothing that command would not. Changes load in the
+next Claude Code session. Python 3.9 or later, standard library only.
+"""
+import argparse
+import curses
+import json
+import os
+import subprocess
+import sys
+
+DEFAULT_MARKETPLACE = 'polar-mods'
+DEFAULT_SOURCE = 'hyperbola-bear/claude-mods'
+# Mods this marketplace renamed: the old name, then the one that replaced it.
+RENAMED = {'user-hd': 'user-hud', 'pr-review-ui': 'code-reference'}
+# A mod's modules: its boolean options named like this (user-hud's `cacheModule`, ...).
+MODULE_SUFFIX = 'Module'
+
+
+class Mod:
+    def __init__(self, name, desc='', latest=None, options=None):
+        self.name = name
+        self.desc = desc
+        self.latest = latest
+        self.options = options or {}
+        self.installed = None  # the `claude plugin list --json` entry, when installed
+        self.replaced_by = None  # the mod that replaced this one, when the marketplace no longer has it
+
+    @property
+    def is_gone(self):
+        return self.latest is None and self.installed is not None
+
+    @property
+    def is_outdated(self):
+        return bool(self.installed and self.latest and self.installed['version'] != self.latest)
+
+    @property
+    def modules(self):
+        return {k: v for k, v in self.options.items() if k.endswith(MODULE_SUFFIX) and v.get('type') == 'boolean'}
+
+    def status(self):
+        if self.is_gone:
+            return f'{self.installed["version"]} · ' + (f'renamed {self.replaced_by}' if self.replaced_by else 'no longer offered')
+        if not self.installed:
+            return f'new · {self.latest}'
+        v = self.installed['version']
+        state = f'{v} → {self.latest}' if self.is_outdated else f'{v} · up to date'
+        return state if self.installed.get('enabled', True) else f'{state} · disabled'
+
+
+# ---------- claude plugin ----------
+
+def claude_json(*args):
+    r = subprocess.run(['claude', 'plugin', *args, '--json'], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f'claude plugin {" ".join(args)} failed:\n{r.stderr.strip() or r.stdout.strip()}')
+    return json.loads(r.stdout)
+
+
+def quiet(*args):
+    return subprocess.run(['claude', 'plugin', *args], capture_output=True, text=True)
+
+
+def ensure_marketplace(name, source):
+    """The marketplace's local clone, added first if it is not yet, refreshed either way."""
+    known = {m['name']: m for m in claude_json('marketplace', 'list')}
+    if name not in known:
+        if not source:
+            sys.exit(f'No marketplace named {name}. Add it with: claude plugin marketplace add <owner>/<repo>')
+        print(f'Adding the {name} marketplace from {source}…')
+        r = quiet('marketplace', 'add', source)
+        if r.returncode != 0:
+            sys.exit(r.stderr.strip() or r.stdout.strip())
+        known = {m['name']: m for m in claude_json('marketplace', 'list')}
+        if name not in known:
+            sys.exit(f'{source} added no marketplace named {name}.')
+    else:
+        print(f'Refreshing {name}…')
+        r = quiet('marketplace', 'update', name)
+        if r.returncode != 0:
+            print(f'  could not refresh ({(r.stderr or r.stdout).strip()[:200]}); using the copy on disk')
+    return known[name]
+
+
+def read_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def catalog(market):
+    """Every mod the marketplace offers, with its latest version and options, and what you have of it."""
+    root = market['installLocation']
+    manifest = read_json(os.path.join(root, '.claude-plugin', 'marketplace.json')) or {}
+    mods = {}
+    for p in manifest.get('plugins', []):
+        src = p.get('source')
+        plugin = read_json(os.path.join(root, src, '.claude-plugin', 'plugin.json')) if isinstance(src, str) else None
+        plugin = plugin or {}
+        mods[p['name']] = Mod(p['name'], p.get('description', ''), plugin.get('version') or p.get('version') or '?', plugin.get('userConfig'))
+    suffix = '@' + market['name']
+    for entry in claude_json('list'):
+        if not entry['id'].endswith(suffix):
+            continue
+        name = entry['id'][: -len(suffix)]
+        mod = mods.setdefault(name, Mod(name))
+        mod.installed = entry
+        if mod.is_gone and RENAMED.get(name) in mods:
+            mod.replaced_by = RENAMED[name]
+    return list(mods.values())
+
+
+# ---------- checklist ----------
+
+def checklist(title, help_line, rows, ticked):
+    """Rows of (label, status, detail) to tick; the ticks chosen, or None when quit."""
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        try:
+            return curses.wrapper(_curses_list, title, help_line, rows, list(ticked))
+        except curses.error:
+            pass
+    return _plain_list(title, rows, list(ticked))
+
+
+def _curses_list(scr, title, help_line, rows, ticks):
+    curses.curs_set(0)
+    curses.use_default_colors()
+    for i, c in enumerate([curses.COLOR_GREEN, curses.COLOR_YELLOW, curses.COLOR_CYAN], start=1):
+        curses.init_pair(i, c, -1)
+    at = 0
+    lw = max(len(r[0]) for r in rows) + 2
+    while True:
+        scr.erase()
+        h, w = scr.getmaxyx()
+        put = lambda y, x, s, a=0: y < h and scr.addnstr(y, x, s, max(0, w - x - 1), a)
+        put(0, 1, title, curses.A_BOLD)
+        put(1, 1, help_line, curses.A_DIM)
+        for i, (label, status, _) in enumerate(rows):
+            y = 3 + i
+            mark = '[x]' if ticks[i] else '[ ]'
+            attr = curses.A_REVERSE if i == at else 0
+            put(y, 1, f'{"›" if i == at else " "} {mark} {label.ljust(lw)}', attr)
+            color = curses.color_pair(2 if '→' in status or 'renamed' in status or 'no longer' in status else 1 if 'up to date' in status else 3)
+            put(y, 7 + lw, status, color)
+        detail = rows[at][2]
+        if detail:
+            put(4 + len(rows), 1, detail, curses.A_DIM)
+        scr.refresh()
+        k = scr.getch()
+        if k in (curses.KEY_UP, ord('k')):
+            at = (at - 1) % len(rows)
+        elif k in (curses.KEY_DOWN, ord('j')):
+            at = (at + 1) % len(rows)
+        elif k == ord(' '):
+            ticks[at] = not ticks[at]
+        elif k == ord('a'):
+            ticks = [not all(ticks)] * len(rows)
+        elif k in (curses.KEY_ENTER, 10, 13):
+            return ticks
+        elif k in (ord('q'), 27):
+            return None
+
+
+def _plain_list(title, rows, ticks):
+    print(f'\n{title}')
+    while True:
+        lw = max(len(r[0]) for r in rows) + 2
+        for i, (label, status, _) in enumerate(rows):
+            print(f'  {i + 1}. [{"x" if ticks[i] else " "}] {label.ljust(lw)}{status}')
+        try:
+            ans = input('Numbers to tick or untick (e.g. 1 3), Enter to go on, q to quit: ').strip().lower()
+        except EOFError:
+            return None
+        if ans == 'q':
+            return None
+        if not ans:
+            return ticks
+        for n in ans.replace(',', ' ').split():
+            if n.isdigit() and 1 <= int(n) <= len(rows):
+                ticks[int(n) - 1] = not ticks[int(n) - 1]
+
+
+# ---------- the plan ----------
+
+def plan_for(mods, wanted, market):
+    """The claude commands that make what you have match what you ticked."""
+    steps = []
+    for mod, want in zip(mods, wanted):
+        pid = f'{mod.name}@{market}'
+        scope = ['--scope', mod.installed['scope']] if mod.installed and mod.installed.get('scope') else []
+        if want and not mod.installed:
+            steps.append((f'install {mod.name} {mod.latest}', ['install', pid]))
+        elif not want and mod.installed:
+            why = f' (replaced by {mod.replaced_by})' if mod.replaced_by else ''
+            steps.append((f'remove {mod.name}{why}', ['uninstall', pid, '--keep-data', *scope]))
+        elif want and mod.installed:
+            if not mod.installed.get('enabled', True):
+                steps.append((f'enable {mod.name}', ['enable', pid, *scope]))
+            if mod.is_outdated:
+                steps.append((f'update {mod.name} {mod.installed["version"]} → {mod.latest}', ['update', pid, *scope]))
+    return steps
+
+
+def current_values(mod, market):
+    """A mod's module switches as set now: its saved values, else the defaults."""
+    values = {k: bool(v.get('default', True)) for k, v in mod.modules.items()}
+    if mod.installed:
+        r = quiet('configure', f'{mod.name}@{market}', '--json')
+        if r.returncode == 0:
+            inputs = json.loads(r.stdout).get('inputs', {})
+            values.update({k: str(inputs[k]).lower() == 'true' for k in values if k in inputs})
+    return values
+
+
+def module_steps(mods, wanted, market):
+    """For each mod you keep that has modules, asks which to turn on; the configure steps for any changed."""
+    steps = []
+    for mod, want in zip(mods, wanted):
+        if not want or not mod.modules:
+            continue
+        keys = list(mod.modules)
+        now = current_values(mod, market)
+        rows = [(mod.modules[k].get('title', k).replace('Module: ', ''), 'now on' if now[k] else 'now off', mod.modules[k].get('description', '')) for k in keys]
+        ticks = checklist(f'{mod.name} modules', 'Tick the parts you want on. Space toggles, Enter applies, q leaves them as they are.', rows, [now[k] for k in keys])
+        if ticks is None:
+            continue
+        changed = {k: 'true' if t else 'false' for k, t in zip(keys, ticks) if t != now[k]}
+        if changed:
+            on = [r[0] for r, t in zip(rows, ticks) if t]
+            steps.append((f'{mod.name}: modules {", ".join(on) or "none"}', ['configure', f'{mod.name}@{market}', '--values-stdin'], json.dumps(changed)))
+    return steps
+
+
+def run(steps, dry_run):
+    failed = 0
+    for step in steps:
+        label, args = step[0], step[1]
+        stdin = step[2] if len(step) > 2 else None
+        line = 'claude plugin ' + ' '.join(args) + (f" <<< '{stdin}'" if stdin else '')
+        if dry_run:
+            print(f'  {line}')
+            continue
+        print(f'→ {label}')
+        r = subprocess.run(['claude', 'plugin', *args], input=stdin, text=True, capture_output=True)
+        out = (r.stdout + r.stderr).strip()
+        if r.returncode != 0:
+            failed += 1
+            print(f'  ✗ failed: {out[:400]}')
+        elif out:
+            print('  ' + out.splitlines()[-1][:200])
+    return failed
+
+
+# ---------- commands ----------
+
+def show_list(mods, market):
+    lw = max(len(m.name) for m in mods) + 2
+    print(f'\n{market["name"]} · {market.get("repo") or market.get("url") or market["installLocation"]}')
+    for m in mods:
+        print(f'  {"●" if m.installed else "○"} {m.name.ljust(lw)}{m.status()}')
+
+
+def main():
+    ap = argparse.ArgumentParser(prog='mods', description='Install, update and remove the mods in a Claude Code plugin marketplace.')
+    ap.add_argument('--marketplace', default=DEFAULT_MARKETPLACE, help=f'the marketplace to manage (default {DEFAULT_MARKETPLACE})')
+    ap.add_argument('--source', help=f'where to add it from when it is not added yet (default {DEFAULT_SOURCE} for {DEFAULT_MARKETPLACE})')
+    ap.add_argument('--list', action='store_true', help='show each mod and its state, change nothing')
+    ap.add_argument('--update', action='store_true', help='update every mod you have, no questions')
+    ap.add_argument('--dry-run', action='store_true', help='print the claude commands instead of running them')
+    a = ap.parse_args()
+
+    if subprocess.run(['which', 'claude'], capture_output=True).returncode != 0:
+        sys.exit('The claude command is not on your PATH. Install Claude Code first.')
+    source = a.source or (DEFAULT_SOURCE if a.marketplace == DEFAULT_MARKETPLACE else None)
+    market = ensure_marketplace(a.marketplace, source)
+    mods = catalog(market)
+    if not mods:
+        sys.exit(f'{a.marketplace} offers no mods.')
+
+    if a.list:
+        show_list(mods, market)
+        return
+    if a.update:
+        steps = [s for m in mods if m.installed for s in plan_for([m], [True], a.marketplace) if s[1][0] == 'update']
+        gone = [m.name for m in mods if m.is_gone]
+        if not steps:
+            print('Every mod you have is up to date.')
+        failed = run(steps, a.dry_run)
+        if gone:
+            print(f'No longer in {a.marketplace}: {", ".join(gone)}. Run mods to swap or remove them.')
+        if steps and not a.dry_run:
+            print('Start a new Claude Code session to load the updates.')
+        sys.exit(1 if failed else 0)
+
+    rows = [(m.name, m.status(), m.desc) for m in mods]
+    ticked = [bool(m.installed) and not m.is_gone for m in mods]
+    for i, m in enumerate(mods):
+        if m.replaced_by:
+            ticked[[x.name for x in mods].index(m.replaced_by)] = True
+    title = f'{market["name"]} · tick the mods you want'
+    wanted = checklist(title, 'Space toggles, a all, Enter goes on, q quits. Unticked mods you have are removed.', rows, ticked)
+    if wanted is None:
+        print('Nothing changed.')
+        return
+    steps = plan_for(mods, wanted, a.marketplace) + module_steps(mods, wanted, a.marketplace)
+    if not steps:
+        print('Nothing to change: you have what you ticked, up to date.')
+        return
+    print('\nThis will:')
+    for s in steps:
+        print(f'  • {s[0]}')
+    if not a.dry_run:
+        try:
+            if input('Go ahead? [Y/n] ').strip().lower() not in ('', 'y', 'yes'):
+                print('Nothing changed.')
+                return
+        except EOFError:
+            print('Nothing changed.')
+            return
+    failed = run(steps, a.dry_run)
+    if not a.dry_run:
+        print(f'\nDone{f", {failed} failed" if failed else ""}. Start a new Claude Code session to load the changes.')
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('\nNothing more changed.')
+        sys.exit(130)

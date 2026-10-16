@@ -37,6 +37,11 @@
  *    Ladder, Meter), drawn from coloured Box and Text and plain Buttons, so the
  *    terminal and the desktop draw the same picture.
  *
+ * Each of the four (cache, pickers, tokens, handoff) is a module with its own /config row
+ * (`cacheModule`, ...), on by default; `/hud <module> on|off` writes it. A module switched off draws
+ * nothing, registers none of its commands and does none of its work (no countdown or alerts, no counting,
+ * no handoff scan).
+ *
  * The band draws whatever other plugins put above the prompt first (it calls
  * `next`), so it sits beside pr-review-ui's band rather than replacing it.
  *
@@ -75,7 +80,8 @@ import {
 } from './cache.ts'
 import type { Level } from './cache.ts'
 import { HANDOFF_DIRS, age, handoffPrompt, handoffTarget, isHandoffName, joinPath, newest, resumePrompt } from './handoff.ts'
-import { MODELS, asEffort, lifeBar, modelAlias, modelLabel, nextWarn } from './hud.ts'
+import { MODELS, MODULES, asEffort, lifeBar, modelAlias, modelLabel, modulesFrom, modulesText, nextWarn, parseHudArgs } from './hud.ts'
+import type { ModuleId, Modules } from './hud.ts'
 import { EFFORT_COLORS, EFFORT_STEPS, MODEL_COLORS, SELECTOR_STYLES, asStyle, effortStep, nextStyle, parseEffortArgs, spread, styleLabel, ultracodeTook } from './selector.ts'
 import type { EffortStep } from './selector.ts'
 import { builder, line, order, piece, put, runs, textOf, wrap } from './cells.ts'
@@ -149,6 +155,8 @@ type Cfg = {
   showBand: boolean
   handoffPath: string
   selectorStyle: SelectorStyle
+  /** The modules switched on; one switched off draws nothing and does none of its work. */
+  modules: Modules
 }
 
 export function readCfg(o: Record<string, unknown>): Cfg {
@@ -164,6 +172,7 @@ export function readCfg(o: Record<string, unknown>): Cfg {
     showBand: b(o.showBand, true),
     handoffPath: typeof o.handoffPath === 'string' ? o.handoffPath.trim() : '',
     selectorStyle: asStyle(o.selectorStyle),
+    modules: modulesFrom(o),
   }
 }
 
@@ -270,6 +279,7 @@ async function ping($: EngineInterface, origin: 'manual' | 'auto'): Promise<stri
 }
 
 async function tick($: EngineInterface) {
+  if (!cfg.modules.cache) return
   const c = await read($, cacheA)
   if (c.lastHitAt === null) return
   const now = await $.clock.now()
@@ -392,12 +402,14 @@ function keepWarmLine(c: CacheState): string {
 /** The settings as the panel lists them, each a toggle or a choice. */
 function settingsView(c: CacheState): Setting[] {
   const warnSeconds = Math.round(cfg.warnMs / 1000)
+  const style: Setting = { key: 'selectorStyle', label: 'Picker style', desc: 'Rail, Ladder or Meter', kind: 'choice', isOn: false, value: styleLabel(cfg.selectorStyle) }
+  if (!cfg.modules.cache) return cfg.modules.pickers ? [style] : []
   return [
     { key: 'autoKeepWarm', label: 'Auto keep-warm', desc: keepWarmDesc(c), kind: 'toggle', isOn: cfg.autoKeepWarm, value: '' },
     { key: 'sound', label: 'Alert sound', desc: 'Glass at the warning', kind: 'toggle', isOn: cfg.sound, value: '' },
     { key: 'notifyMac', label: 'Mac alert', desc: `Keep warm button, closes in ${cfg.alertSeconds}s`, kind: 'toggle', isOn: cfg.notifyMac, value: '' },
     { key: 'warnSeconds', label: 'Alert at', desc: 'time left when the alert fires', kind: 'choice', isOn: false, value: fmtClock(warnSeconds * 1000) },
-    { key: 'selectorStyle', label: 'Picker style', desc: 'Rail, Ladder or Meter', kind: 'choice', isOn: false, value: styleLabel(cfg.selectorStyle) },
+    ...(cfg.modules.pickers ? [style] : []),
   ]
 }
 
@@ -581,6 +593,7 @@ async function measureContext($: EngineInterface, how: 'replace' | 'trim') {
 
 /** A model call made beside the conversation: credited to the plugin that made it (this one's pings are counted where they are sent). */
 async function countModelCall($: EngineInterface, plugin: string, r: { value?: ModelForkResult }) {
+  if (!cfg.modules.tokens) return
   const usage = r.value && 'usage' in r.value ? r.value.usage : undefined
   if (plugin === 'user-hud' || !usage || usage.input_tokens + usage.output_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens === 0) return
   await update($, tokensA, s => attributePlugin(s, usage, plugin))
@@ -619,6 +632,14 @@ async function setOption($: EngineInterface, field: string, value: boolean | str
   options = { ...options, [field]: value }
   cfg = readCfg(options)
   $.ui.invalidate('ui.render')
+}
+
+/** `/hud <module> on|off`: writes the module's /config row; the reload that follows registers its commands and work. */
+async function setModule($: EngineInterface, id: ModuleId, isOn: boolean): Promise<string> {
+  if (cfg.modules[id] === isOn) return `The ${id} module is already ${isOn ? 'on' : 'off'}.`
+  const key = MODULES.find(m => m.id === id)!.key
+  await setOption($, key, isOn)
+  return cfg.modules[id] === isOn ? `The ${id} module is ${isOn ? 'on' : 'off'}.` : `The ${id} module stays ${isOn ? 'off' : 'on'}.`
 }
 
 // ---------- handoff ----------
@@ -705,12 +726,13 @@ export const register: Register = (on, given) => {
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    await $.command.register({ name: 'cache', description: 'Prompt cache status: time left, size, hit rate and lifetime' })
-    await $.command.register({ name: 'keepwarm', description: 'Refresh the prompt cache now with a one-line ping (adds nothing to the chat)' })
-    await $.command.register({ name: 'read-handoff', description: 'Show the newest handoff note, with a button to continue from it' })
-    await $.command.register({ name: 'hud', description: 'Open or close the user-hud panel in the corner above the prompt' })
-    await $.command.register({ name: 'hud-styles', description: 'The three picker styles side by side (Rail, Ladder, Meter), with a button to use each' })
-    await $.command.register({ name: 'tokens', description: 'Where this session’s tokens went: files, chat, MCP, shell, skills and plugins, subagents and more' })
+    const { cache, pickers, tokens, handoff } = cfg.modules
+    await $.command.register({ name: 'hud', description: 'Open or close the user-hud panel; /hud modules lists its modules, /hud <module> on|off switches one', argumentHint: '[modules | <module> on|off]' })
+    if (cache) await $.command.register({ name: 'cache', description: 'Prompt cache status: time left, size, hit rate and lifetime' })
+    if (cache) await $.command.register({ name: 'keepwarm', description: 'Refresh the prompt cache now with a one-line ping (adds nothing to the chat)' })
+    if (handoff) await $.command.register({ name: 'read-handoff', description: 'Show the newest handoff note, with a button to continue from it' })
+    if (pickers) await $.command.register({ name: 'hud-styles', description: 'The three picker styles side by side (Rail, Ladder, Meter), with a button to use each' })
+    if (tokens) await $.command.register({ name: 'tokens', description: 'Where this session’s tokens went: files, chat, MCP, shell, skills and plugins, subagents and more' })
 
     const isOpen = (await $.store.get(STORE_OPEN).catch(() => undefined)) === true
     const model = await $.session.model().catch(() => null)
@@ -724,16 +746,20 @@ export const register: Register = (on, given) => {
       effort: s.effort ?? (isUltracode ? 'xhigh' : asEffort(settings.effortLevel)),
       ultracode: s.ultracode || isUltracode,
     }))
-    const usage = await $.session.usage().catch(() => null)
-    await trackOverage($, usage?.rateLimits ?? [])
-    await resolveTtl($)
-    await scanHandoffs($).catch(() => [])
-    // A reload keeps the tally (it is the session's); a fresh session starts it.
-    const now = await $.clock.now()
-    await update($, tokensA, s => (s.since === null ? { ...s, since: now } : s))
-    // A resumed conversation, or a reload mid-chat: what is already in the context.
-    await measureContext($, 'replace').catch(() => {})
-    await refreshStanding($, true).catch(() => {})
+    if (cache) {
+      const usage = await $.session.usage().catch(() => null)
+      await trackOverage($, usage?.rateLimits ?? [])
+      await resolveTtl($)
+    }
+    if (handoff) await scanHandoffs($).catch(() => [])
+    if (tokens) {
+      // A reload keeps the tally (it is the session's); a fresh session starts it.
+      const now = await $.clock.now()
+      await update($, tokensA, s => (s.since === null ? { ...s, since: now } : s))
+      // A resumed conversation, or a reload mid-chat: what is already in the context.
+      await measureContext($, 'replace').catch(() => {})
+      await refreshStanding($, true).catch(() => {})
+    }
 
     $.clock.every(1000, () => void tick($))
     return started
@@ -751,7 +777,7 @@ export const register: Register = (on, given) => {
         isHandoffPending = false
         void scanHandoffs($)
       }
-      void refreshStanding($).catch(() => {})
+      if (cfg.modules.tokens) void refreshStanding($).catch(() => {})
     }
     return next(e)
   })
@@ -761,6 +787,7 @@ export const register: Register = (on, given) => {
   on('turn.step', async function* ($, e, next) {
     if (e.agentId !== undefined) {
       const result = yield* next(e)
+      if (!cfg.modules.tokens) return result
       try {
         const usage = result.usage
         if (usage) {
@@ -776,15 +803,18 @@ export const register: Register = (on, given) => {
     // The effort the request really carries, after any downgrade for the model.
     const effort = asEffort(e.effort)
     if (effort) await update($, hudA, s => (s.effort === effort ? s : { ...s, effort })).catch(() => {})
-    requestsSinceMeasure += 1
-    if (needsMeasure) await measureContext($, 'replace').catch(() => {})
-    else if (requestsSinceMeasure >= MEASURE_EVERY) await measureContext($, 'trim').catch(() => {})
-    const weights = await read($, tokensA).then(contextWeights, () => null)
+    const { cache, tokens } = cfg.modules
+    if (tokens) {
+      requestsSinceMeasure += 1
+      if (needsMeasure) await measureContext($, 'replace').catch(() => {})
+      else if (requestsSinceMeasure >= MEASURE_EVERY) await measureContext($, 'trim').catch(() => {})
+    }
+    const weights = tokens ? await read($, tokensA).then(contextWeights, () => null) : null
     const result = yield* next(e)
     try {
       const usage = result.usage
       if (usage) {
-        await update($, cacheA, s => afterRequest(s, at, usage, usage.model))
+        if (cache) await update($, cacheA, s => afterRequest(s, at, usage, usage.model))
         if (weights) await update($, tokensA, s => attributeRequest(s, weights, usage, { answer: result.answer, toolUses: result.toolUses }))
       }
     } catch {
@@ -796,7 +826,7 @@ export const register: Register = (on, given) => {
   // Every row the main conversation keeps, as stored: what it added, group by group.
   on('session.append', async ($, e, next) => {
     const stored = await next(e)
-    if (e.agentId === undefined && stored.message) {
+    if (cfg.modules.tokens && e.agentId === undefined && stored.message) {
       await countRow($, { door: e.door, origin: e.origin, message: stored.message }).catch(() => {})
     }
     return stored
@@ -830,9 +860,9 @@ export const register: Register = (on, given) => {
 
   // Claude Code reports the plan windows and the cost after each response; past a limit is overage.
   on('session.measure', async ($, e, next) => {
-    if (e.changed.includes('rateLimits')) await trackOverage($, e.rateLimits).catch(() => {})
+    if (cfg.modules.cache && e.changed.includes('rateLimits')) await trackOverage($, e.rateLimits).catch(() => {})
     const cost = e.cost
-    if (e.changed.includes('cost') && cost) await update($, tokensA, s => ({ ...s, costUsd: cost.usd })).catch(() => {})
+    if (cfg.modules.tokens && e.changed.includes('cost') && cost) await update($, tokensA, s => ({ ...s, costUsd: cost.usd })).catch(() => {})
     return next(e)
   })
 
@@ -887,7 +917,12 @@ export const register: Register = (on, given) => {
     return { text: files[0] ? `Handoff: ${files[0].path}` : 'No handoff note found.' }
   })
 
-  on('command.run', { command: 'hud' }, async $ => {
+  on('command.run', { command: 'hud' }, async ($, e) => {
+    const args = parseHudArgs(e.args)
+    if (args.kind === 'list') return { text: modulesText(cfg.modules) }
+    if (args.kind === 'set') return { text: await setModule($, args.id, args.isOn) }
+    if (args.kind === 'unknown') return { text: `Usage: /hud, /hud modules, or /hud <module> on|off (${MODULES.map(m => m.id).join(', ')}).` }
+    if (!MODULES.some(m => cfg.modules[m.id])) return { text: 'Every user-hud module is off, so the panel has nothing to show. Turn one on with /hud <module> on.' }
     const { isOpen } = await read($, hudA)
     await setPanelOpen($, !isOpen)
     return { text: isOpen ? 'user-hud panel closed.' : 'user-hud panel open.' }
@@ -908,7 +943,8 @@ export const register: Register = (on, given) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     // Whatever other plugins draw above the prompt comes first; this band goes under it.
     const beneath = await next(e)
-    if (!cfg.showBand || e.props.hasSurvey) return beneath
+    const mods = cfg.modules
+    if (!cfg.showBand || e.props.hasSurvey || !MODULES.some(m => mods[m.id])) return beneath
     const c = await read($, cacheA)
     const t = await read($, ttlA)
     const hud = await read($, hudA)
@@ -928,24 +964,26 @@ export const register: Register = (on, given) => {
       width,
       maxWidth: Math.max(24, e.props.bodyColumns),
       maxRows: e.props.maxRows,
-      chip: chipRuns(c, lv, rem),
-      overage: hud.overage ? limitLabel(hud.overage) : null,
-      usedTokens: used > 0 ? `${fmtTokens(Math.round(used))} tokens` : null,
-      setup: setupRuns(hud),
-      keepWarm: c.isPinging ? 'none' : lv === 'cooling' ? 'urged' : lv === 'warm' ? 'quiet' : 'none',
-      isPinging: c.isPinging,
-      pickers: { style: fittedStyle(cfg.selectorStyle, width, fields), width, fields },
-      tokens: {
-        segments: used > 0 ? stack(tokens, TOKEN_BAR_CELLS).map(sg => ({ color: groupOf(sg.id).color, cells: sg.cells })) : [],
-        total: fmtTokens(Math.round(used)),
-        leaders: ranked(tokens)
-          .filter(g => g.used > 0)
-          .slice(0, 2)
-          .map(g => `${groupOf(g.id).label} ${pct(g.share)}`),
-      },
-      cache: cacheRuns(c, t.ttl, lv, rem),
+      chip: mods.cache ? chipRuns(c, lv, rem) : [],
+      overage: mods.cache && hud.overage ? limitLabel(hud.overage) : null,
+      usedTokens: mods.tokens && used > 0 ? `${fmtTokens(Math.round(used))} tokens` : null,
+      setup: mods.pickers ? setupRuns(hud) : [],
+      keepWarm: !mods.cache || c.isPinging ? 'none' : lv === 'cooling' ? 'urged' : lv === 'warm' ? 'quiet' : 'none',
+      isPinging: mods.cache && c.isPinging,
+      pickers: mods.pickers ? { style: fittedStyle(cfg.selectorStyle, width, fields), width, fields } : null,
+      tokens: mods.tokens
+        ? {
+            segments: used > 0 ? stack(tokens, TOKEN_BAR_CELLS).map(sg => ({ color: groupOf(sg.id).color, cells: sg.cells })) : [],
+            total: fmtTokens(Math.round(used)),
+            leaders: ranked(tokens)
+              .filter(g => g.used > 0)
+              .slice(0, 2)
+              .map(g => `${groupOf(g.id).label} ${pct(g.share)}`),
+          }
+        : null,
+      cache: mods.cache ? cacheRuns(c, t.ttl, lv, rem) : null,
       settings: settingsView(c),
-      handoff: { hasNewest: newestNote !== undefined, note: newestNote ? `newest · ${age(newestNote.mtimeMs, now)}` : 'no notes yet' },
+      handoff: mods.handoff ? { hasNewest: newestNote !== undefined, note: newestNote ? `newest · ${age(newestNote.mtimeMs, now)}` : 'no notes yet' } : null,
     })
     // flexGrow: the desktop sets the tree beside its own collapse control in a row, where an ungrown
     // tree shrinks to its content and the tab lands on the left.
