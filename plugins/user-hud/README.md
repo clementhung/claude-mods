@@ -2,11 +2,11 @@
 
 # user-hud
 
-A control panel tucked into the bottom-right corner, above the Claude Code prompt: where your tokens go, model and effort pickers, prompt-cache countdown, the settings you toggle most, and handoff buttons.
+A control panel tucked into the bottom-right corner, above the Claude Code prompt: where your tokens go, model and effort pickers, prompt-cache countdown, the settings you toggle most, handoff buttons, and next steps after each reply.
 
 ## Modules
 
-The panel is four modules, each on by default:
+The panel is five modules, each on by default:
 
 | Module | What it is |
 | --- | --- |
@@ -14,11 +14,12 @@ The panel is four modules, each on by default:
 | `pickers` | the model and effort pickers; `/hud-styles` |
 | `tokens` | where the tokens go: the TOKENS row and the Tokens pane; `/tokens` |
 | `handoff` | Write handoff and Read handoff; `/read-handoff` |
+| `next` | next steps: follow-up prompts after each reply, one key to put one in the prompt box |
 
-Turn a module off and it leaves the panel and the closed row, its commands are not registered, and none of its work runs: with `cache` off nothing counts down, alerts or pings, and with `tokens` off nothing is counted. Turn every module off and the band draws nothing.
+Turn a module off and it leaves the panel and the closed row, its commands are not registered, and none of its work runs: with `cache` off nothing counts down, alerts or pings, and with `tokens` off nothing is counted, and with `next` off no reply asks for suggestions. Turn every module off and the band draws nothing.
 
 - `/hud modules` lists them, and `/hud <module> on|off` switches one (`/hud tokens off`).
-- `/config` has the same switches, as **Module: cache** and so on.
+- `/config` has the same switches, as **Module: cache**, **Module: next steps** and so on.
 - The [`mods` script](../../README.md#install-and-update) asks which modules to turn on when it installs or updates user-hud.
 
 ## The corner
@@ -109,14 +110,32 @@ How it counts:
 - `/cache` prints time left, size, hit rate, the lifetime and why, and the overage state.
 - Optional: **Keep the cache warm automatically** pings 30 seconds before expiry, up to 3 times between two of your prompts.
 
+## Next steps
+
+After each reply, up to three follow-up prompts show in the panel, under **NEXT STEPS**:
+
+```
+── N E X T   S T E P S ─────────────────────────────────────────────────
+✦ 1: Run the tests
+✦ 2: Commit this and open a PR
+✦ 3: Add a test for the empty case
+```
+
+- Press `1`, `2` or `3` (once you have clicked into the band), or click one, and it goes in the prompt box as your draft, replacing what is there. Edit it or press Enter.
+- With the panel closed, **✦ 3 next** beside the tab says they are waiting; click it to open the panel.
+- They come from one short Haiku call on your last prompt (its first 2,000 characters) and the reply (its last 6,000), not the whole conversation, so each costs a few thousand Haiku tokens. The Tokens pane counts them under Skills & plugins, as user-hud.
+- A new prompt clears them. A stopped turn asks for none. If the call fails, the panel says why in their place.
+- On a short band they fold onto one line of pills.
+- `/hud next off` turns them off.
+
 ## Handoff
 
 - **Write handoff** (`h`) runs your `/handoff` command. Without one, it asks Claude to write a note to `.claude/handoffs/<date>-<time>.md`.
 - **Read handoff** (`r`, or `/read-handoff`) opens the newest note with **Continue from this** (`c`), **Older** (`o`), **Newer** (`n`) and **Rescan** (`r`). The note is drawn as text in the pane's grid of cells: headings bold, code dim, list items wrapped under their text.
 - Notes are found in `HANDOFF.md`, `.claude/`, `.claude/handoffs/`, `handoffs/` and `docs/`. If yours live elsewhere, set **Handoff note location** in `/config`.
 
-Band hotkeys (`w`, `h`, `r`, `t`) work once you have clicked into the band. `h`, `r` and `t` work while the panel is open; with it closed, `/handoff`, `/read-handoff` and `/tokens` still do.
+Band hotkeys (`w`, `h`, `r`, `t`, and `1` to `3` for next steps) work once you have clicked into the band. `h`, `r`, `t` and `1` to `3` work while the panel is open; with it closed, `/handoff`, `/read-handoff` and `/tokens` still do.
 
 ## What it can reach
 
-`claude plugin validate .` lists it: `$.model.fork` (keep-warm pings), `$.process.run` (osascript, afplay), file reads (handoff notes, the alert's logo), `$.store` (whether the panel is open), `$.settings.read` (your effort level and `promptCacheTtl`), `$.env` (CLAUDE_CODE_PROMPT_CACHE_TTL), `$.session.usage` (the plan windows, for overage; the context breakdown and the cost, for tokens), `$.agent.list` (a subagent's type), `$.config.set` (its own rows, from the panel's toggles), and command run (`/model`, `/effort`, `/handoff`, `/clear`) and prompt submit on button presses. To count tokens it reads every row the conversation keeps (`session.append`), each model request's usage (`turn.step`) and other plugins' model calls (`model.fork`, `model.complete`), and changes none of them. The tally stays in the session; nothing is sent anywhere. It writes no files.
+`claude plugin validate .` lists it: `$.model.fork` (keep-warm pings), `$.model.complete` (next steps, on Haiku), `$.process.run` (osascript, afplay), file reads (handoff notes, the alert's logo), `$.store` (whether the panel is open), `$.settings.read` (your effort level and `promptCacheTtl`), `$.env` (CLAUDE_CODE_PROMPT_CACHE_TTL), `$.session.usage` (the plan windows, for overage; the context breakdown and the cost, for tokens), `$.agent.list` (a subagent's type), `$.config.set` (its own rows, from the panel's toggles), and command run (`/model`, `/effort`, `/handoff`, `/clear`) and prompt submit on button presses, and prompt fill when you pick a next step. To count tokens it reads every row the conversation keeps (`session.append`), each model request's usage (`turn.step`) and other plugins' model calls (`model.fork`, `model.complete`), and changes none of them. The tally stays in the session; nothing is sent anywhere. It writes no files.

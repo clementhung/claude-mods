@@ -106,6 +106,11 @@ type World = {
   commands: string[]
   /** Slash commands the plugin registered. */
   registered: string[]
+  /** What `$.model.complete` was asked, and what it answers next (null: an API error). */
+  completes: { model: string; system?: string; prompt: string }[]
+  completeReply: string | null
+  /** What `$.prompt.fill` put in the prompt box. */
+  fills: string[]
   toasts: string[]
   argv: string[][]
   forks: string[]
@@ -184,6 +189,9 @@ function world(on: On): World {
     files: {},
     commands: [],
     registered: [],
+    completes: [],
+    completeReply: 'Run the tests\nCommit this and open a PR\nAdd a test for the empty case',
+    fills: [],
     toasts: [],
     argv: [],
     forks: [],
@@ -255,6 +263,16 @@ function world(on: On): World {
   on('command.register', ($, e) => {
     w.registered.push(e.name)
     return { value: { command: e.name } }
+  })
+  on('model.complete', ($, e) => {
+    w.completes.push({ model: e.model, system: e.system, prompt: e.prompt })
+    if (w.completeReply === null) return { value: { isAnswered: false as const, reason: 'api-error' as const, status: 529, error: { type: 'overloaded_error', message: 'Overloaded' } } as never }
+    return { value: { isAnswered: true as const, text: w.completeReply, usage: { input_tokens: 900, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
+  })
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('prompt.fill', ($, e) => {
+    w.fills.push(e.text)
+    return { isFilled: true }
   })
   on('command.list', () => ({ value: w.commands.map(name => ({ name, description: '', source: 'user' as const })) }))
   on('prompt.submit', ($, e) => {
@@ -1228,7 +1246,7 @@ test('/hud modules lists the modules and /hud <module> on|off writes its /config
   const w = world(on)
   await start($)
   const hud = (args: string) => $.command.run({ command: 'hud', args, ...RUN })
-  expect((await hud('modules')).text).toMatch(/^● on {3}cache .*\n● on {3}pickers .*\n○ off {2}tokens .*\n● on {3}handoff .*\nSwitch one with \/hud <module> on\|off, or in \/config\.$/)
+  expect((await hud('modules')).text).toMatch(/^● on {3}cache .*\n● on {3}pickers .*\n○ off {2}tokens .*\n● on {3}handoff .*\n● on {3}next .*\nSwitch one with \/hud <module> on\|off, or in \/config\.$/)
   expect((await hud('tokens on')).text).toBe('The tokens module is on.')
   expect(w.configSets).toEqual([['user-hud.tokensModule', true]])
   expect((await hud('tokens on')).text).toBe('The tokens module is already on.')
@@ -1244,11 +1262,65 @@ test('/hud modules lists the modules and /hud <module> on|off writes its /config
   expect((await hud('handoff off')).text).toBe('The handoff module stays on.')
 })
 
-test('with every module off the band draws nothing of its own and /hud says how to turn one on', { options: { cacheModule: false, pickersModule: false, tokensModule: false, handoffModule: false } }, async ($, on) => {
+test('with every module off the band draws nothing of its own and /hud says how to turn one on', { options: { cacheModule: false, pickersModule: false, tokensModule: false, handoffModule: false, nextModule: false } }, async ($, on) => {
   const w = world(on)
   await start($)
   expect(w.registered).toEqual(['hud'])
   const band = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'AbovePrompt', props: BAND() })
   expect(await cellsOf(band)).toBe(undefined)
   expect((await $.command.run({ command: 'hud', args: '', ...RUN })).text).toMatch(/Every user-hud module is off/)
+})
+
+test('next steps: after a reply a short Haiku call suggests follow-ups; 1 to 3 or a click puts one in the prompt box', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'fix the parser bug', turnId: 't1' })
+  await $.turn.complete({ answer: 'Fixed the off-by-one in parse().', durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  await w.clock.settle()
+  // One small call on the last exchange alone, not a fork of the conversation.
+  expect(w.completes).toHaveLength(1)
+  expect(w.completes[0]!.model).toBe('haiku')
+  expect(w.completes[0]!.prompt).toBe('<prompt>\nfix the parser bug\n</prompt>\n\n<reply>\nFixed the off-by-one in parse().\n</reply>')
+  expect(w.forks).toEqual([])
+  for (const surface of SURFACES) {
+    const band = await $.ui.mount({ plugin: 'user-hud', surface, component: 'AbovePrompt', props: { ...BAND(), maxRows: 40 } })
+    // Closed, a chip beside the tab says they are there, and opens the panel like the tab.
+    expect(await linesOf(band)).toEqual([expect.stringMatching(/✦ 3 next {3}◆ user-hud ▴ $/)])
+    await openPanel(band)
+    expect(await shows(band, /^✦ 1: Run the tests/)).toBe(true)
+    expect(await shows(band, /^✦ 3: Add a test for the empty case/)).toBe(true)
+    expect((await cellsOf(band))?.keys).toMatchObject({ '1': 'next:0', '2': 'next:1', '3': 'next:2' })
+    await act(band, 'next:1')
+    await act(band, 'panel')
+    await band.unmount()
+  }
+  expect(w.fills).toEqual(['Commit this and open a PR', 'Commit this and open a PR'])
+  // The call is counted where the tokens go, under this plugin.
+  expect(await tokensText($)).toMatch(/spent: user-hud/)
+  // A new turn clears them: they no longer follow on.
+  await $.turn.start({ text: 'commit it', turnId: 't2' })
+  const band = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'AbovePrompt', props: BAND() })
+  expect(await shows(band, 'next')).toBe(false)
+})
+
+test('next steps: an aborted turn asks nothing; an API error says so dim in their place', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.complete({ answer: 'partial', durationMs: 10, isAborted: true, turnId: 't1', reason: 'aborted' })
+  await w.clock.settle()
+  expect(w.completes).toEqual([])
+  w.completeReply = null
+  await $.turn.complete({ answer: 'Done.', durationMs: 10, isAborted: false, turnId: 't2', reason: 'answer' })
+  await w.clock.settle()
+  const band = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND(), maxRows: 40 } })
+  await openPanel(band)
+  expect(await shows(band, '✦ no next steps this time (API 529)')).toBe(true)
+})
+
+test('with the next module off, a reply asks for nothing', { options: { nextModule: false } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.complete({ answer: 'Done.', durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  await w.clock.settle()
+  expect(w.completes).toEqual([])
 })

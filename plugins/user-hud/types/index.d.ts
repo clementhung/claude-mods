@@ -111,6 +111,16 @@ export type TokenState = {
   since: number | null
 }
 
+/** Next steps: the prompts suggested after the last main turn. */
+export type NextState = {
+  /** The suggestions, at most three; empty before the first reply and while a turn runs. */
+  items: string[]
+  /** True while the suggestions are being asked for. */
+  isThinking: boolean
+  /** Why the last ask brought none (an API error), shown dim in its place; null otherwise. */
+  error: string | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'user-hud': {
@@ -119,6 +129,7 @@ declare module 'claude-code' {
       handoff: HandoffState
       hud: HudState
       tokens: TokenState
+      next: NextState
     }
   }
 }

@@ -37,6 +37,8 @@ export type BandView = {
   cache: Run[] | null
   settings: Setting[]
   handoff: { hasNewest: boolean; note: string } | null
+  /** Next steps: the prompts suggested after the last reply, or a dim note while they are asked for. */
+  next: { items: string[]; note: string | null } | null
 }
 
 export type Band = Grid & { keys: Record<string, string>; width: number }
@@ -61,6 +63,12 @@ const tab = (isOpen: boolean): Piece => piece(` ◆ user-hud ${isOpen ? '▾' : 
 const keepWarm = (v: BandView): Piece | null =>
   v.keepWarm === 'none' ? null : pill('w: Keep warm', 'keepwarm', v.keepWarm === 'urged' ? 'warning' : 'subtle', v.keepWarm === 'quiet')
 
+/** `✦ 3 next`: next steps are waiting; it opens the panel where they are. */
+function nextChip(v: BandView): Piece | null {
+  const n = v.next?.items.length ?? 0
+  return n > 0 ? piece(`✦ ${n} next`, { color: 'claude' }, 'panel') : null
+}
+
 /** The closed row: the cache, overage, tokens, model and effort beside the tab; the least needed go first when narrow. */
 function closedRow(v: BandView): Band {
   const kw = v.keepWarm === 'urged' && !v.isPinging ? keepWarm(v) : null
@@ -68,12 +76,13 @@ function closedRow(v: BandView): Band {
   const optional: (Piece | null)[] = [
     v.usedTokens ? text(v.usedTokens, { isDim: true }) : null,
     v.setup.length > 0 ? { runs: v.setup, action: null } : null,
+    nextChip(v),
     v.overage ? pill('New chat', 'newchat', 'subtle') : null,
     v.overage ? text('⚠ overage', { color: 'warning' }) : null,
     v.chip.length > 0 ? { runs: v.chip, action: null } : null,
   ]
   const order = (kept: (Piece | null)[]) =>
-    [kept[4], kept[3], kept[2], kept[0], kept[1], kw, tab(false)].filter((p): p is Piece => p !== null)
+    [kept[5], kept[4], kept[3], kept[0], kept[1], kept[2], kw, tab(false)].filter((p): p is Piece => p !== null)
   const widthOfRow = (ps: Piece[]) => ps.reduce((n, p) => n + widthOf(p.runs), 0) + 2 * Math.max(0, ps.length - 1)
   const kept = [...optional]
   for (let i = 0; i < kept.length && widthOfRow(order(kept)) > v.maxWidth; i += 1) kept[i] = null
@@ -102,9 +111,16 @@ function settingRow(s: Setting, width: number): ReturnType<typeof line> {
 
 /** The settings folded onto as few rows as fit: one pill each, the same actions as the full rows. */
 function settingsLines(v: BandView, width: number) {
-  const pills = v.settings.map(s =>
-    s.kind === 'toggle' ? pill(`${s.isOn ? '●' : '○'} ${s.label}`, `set:${s.key}`, s.isOn ? 'success' : 'subtle') : pill(s.value, `set:${s.key}`, 'subtle'),
+  return folded(
+    v.settings.map(s =>
+      s.kind === 'toggle' ? pill(`${s.isOn ? '●' : '○'} ${s.label}`, `set:${s.key}`, s.isOn ? 'success' : 'subtle') : pill(s.value, `set:${s.key}`, 'subtle'),
+    ),
+    width,
   )
+}
+
+/** Pills laid on as few rows as fit, a space between. */
+function folded(pills: Piece[], width: number) {
   const rows: Piece[][] = pills.length > 0 ? [[]] : []
   let used = 0
   for (const p of pills) {
@@ -161,6 +177,21 @@ function openPanel(v: BandView, fit: Fit): Band {
     b.add(h.row, h.spans)
     keys.h = 'handoff'
     if (v.handoff.hasNewest) keys.r = 'readhandoff'
+  }
+  if (v.next && (v.next.items.length > 0 || v.next.note)) {
+    if (fit === 'full') rule('NEXT STEPS')
+    if (v.next.items.length === 0) {
+      const n = line(W, [text('✦', { color: 'claude' }), text(v.next.note ?? '', { isDim: true })])
+      b.add(n.row, n.spans)
+    } else if (fit === 'compact') {
+      for (const r of folded(v.next.items.map((t, i) => pill(`${i + 1} ${t}`, `next:${i}`, 'subtle')), W)) b.add(r.row, r.spans)
+    } else {
+      v.next.items.forEach((t, i) => {
+        const n = line(W, [text('✦', { color: 'claude' }), keyed(`${i + 1}`, t, `next:${i}`)])
+        b.add(n.row, n.spans)
+      })
+    }
+    v.next.items.forEach((_, i) => (keys[`${i + 1}`] = `next:${i}`))
   }
   if (fit === 'full') b.add(runs(footerRule('user-hud', W), { isDim: true }))
   const tr = line(W, [], [tab(true)])

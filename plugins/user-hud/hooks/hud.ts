@@ -26,6 +26,7 @@ export const MODULES = [
   { id: 'pickers', key: 'pickersModule', desc: 'model and effort pickers' },
   { id: 'tokens', key: 'tokensModule', desc: 'where the tokens go' },
   { id: 'handoff', key: 'handoffModule', desc: 'write and read handoff notes' },
+  { id: 'next', key: 'nextModule', desc: 'follow-up prompts after each reply (a short Haiku call)' },
 ] as const
 
 export type ModuleId = (typeof MODULES)[number]['id']

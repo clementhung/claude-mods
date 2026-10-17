@@ -32,6 +32,7 @@ const VIEW: BandView = {
     { key: 'warnSeconds', label: 'Alert at', desc: 'time left when the alert fires', kind: 'choice', isOn: false, value: '2:00' },
   ],
   handoff: { hasNewest: true, note: 'newest · 2h ago' },
+  next: null,
 }
 
 test('the open panel: every row as wide as the panel, the tab against its right edge', () => {
@@ -95,4 +96,22 @@ test('a part whose module is off is left out, with its divider and its hotkey', 
   // Folded for a short band, no settings leave no empty row.
   const compact = bandGrid({ ...VIEW, pickers: null, cache: null, handoff: null, settings: [], keepWarm: 'none', maxRows: 1 })
   expect(plain(compact).map(l => l.trim())).toEqual([expect.stringMatching(/^TOKENS/), '◆ user-hud ▾'])
+})
+
+test('next steps: numbered rows under their divider, 1 to 3 as hotkeys; folded into pills when short; a chip when closed', () => {
+  const items = ['Run the tests', 'Commit this and open a PR']
+  const g = bandGrid({ ...VIEW, next: { items, note: null } })
+  expect(plain(g)).toContainEqual(expect.stringMatching(/^── N E X T +S T E P S/))
+  expect(plain(g)).toContainEqual(expect.stringMatching(/^✦ 1: Run the tests +$/))
+  expect(plain(g)).toContainEqual(expect.stringMatching(/^✦ 2: Commit this and open a PR +$/))
+  expect(g.keys).toMatchObject({ '1': 'next:0', '2': 'next:1' })
+  const compact = bandGrid({ ...VIEW, next: { items, note: null }, maxRows: 10 })
+  expect(plain(compact)).toContainEqual(expect.stringMatching(/^ 1 Run the tests {3}2 Commit this and open a PR +$/))
+  expect(compact.hits.map(h => h.id)).toContain('next:1')
+  // While they are asked for, a dim note; with none and nothing to say, no row at all.
+  expect(plain(bandGrid({ ...VIEW, next: { items: [], note: 'thinking of next steps…' } }))).toContainEqual(expect.stringMatching(/^✦ thinking of next steps… +$/))
+  expect(bandGrid({ ...VIEW, next: { items: [], note: null } }).rows.length).toBe(bandGrid(VIEW).rows.length)
+  const closed = bandGrid({ ...VIEW, isOpen: false, next: { items, note: null } })
+  expect(plain(closed)).toEqual(['◆ 52:10  1.2M tokens  Opus 5.5 · XHigh  ✦ 2 next   ◆ user-hud ▴ '])
+  expect(textOf(closed, 'panel')).toBe('✦ 2 next')
 })
