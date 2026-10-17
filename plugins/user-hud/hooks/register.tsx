@@ -37,7 +37,11 @@
  *    Ladder, Meter), drawn from coloured Box and Text and plain Buttons, so the
  *    terminal and the desktop draw the same picture.
  *
- * Each of the four (cache, pickers, tokens, handoff) is a module with its own /config row
+ * 5. Next steps. After each main reply, a short Haiku call on the last prompt and the reply (not the
+ *    whole conversation) suggests up to three follow-up prompts; 1, 2 or 3 (or a click) puts one in the
+ *    prompt box as a draft to edit or send. A new turn clears them.
+ *
+ * Each of the five (cache, pickers, tokens, handoff, next) is a module with its own /config row
  * (`cacheModule`, ...), on by default; `/hud <module> on|off` writes it. A module switched off draws
  * nothing, registers none of its commands and does none of its work (no countdown or alerts, no counting,
  * no handoff scan).
@@ -45,19 +49,19 @@
  * The band draws whatever other plugins put above the prompt first (it calls
  * `next`), so it sits beside pr-review-ui's band rather than replacing it.
  *
- * Reaches: model.fork (keep-warm pings), process.run (osascript, afplay),
+ * Reaches: model.fork (keep-warm pings), model.complete (next steps, on Haiku), process.run (osascript, afplay),
  * fs reads (handoff notes, the alert's logo), store (the panel's open state),
  * settings read (the effort level, promptCacheTtl), env read
  * (CLAUDE_CODE_PROMPT_CACHE_TTL), session usage (the plan windows, the context
  * breakdown, the cost), agent list (a subagent's type), config set (the panel's
  * toggles), command run (/model, /effort, /handoff, /clear) and prompt submit
- * on button presses. It reads the conversation's rows and every model call to
+ * on button presses, and prompt fill when a next step is picked. It reads the conversation's rows and every model call to
  * count tokens, and changes none of them. Writes no files.
  */
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelForkResult, Register } from 'claude-code'
 
-import type { CacheState, CacheTtl, HandoffFile, HandoffState, HudState, PlanLimit, SelectorStyle, TtlInfo } from '../types'
+import type { CacheState, CacheTtl, HandoffFile, HandoffState, HudState, NextState, PlanLimit, SelectorStyle, TtlInfo } from '../types'
 import {
   EMPTY_CACHE,
   KEEP_WARM_PROMPT,
@@ -92,6 +96,7 @@ import { fittedStyle, layout, parsePick } from './selectorgrid.ts'
 import type { GridField } from './selectorgrid.ts'
 import type { Ui } from './ui.ts'
 import { handoffPaneGrid } from './handoffview.ts'
+import { NEXT_MODEL, NEXT_SYSTEM, nextRequest, parseNext } from './next.ts'
 import { tokensPaneGrid } from './tokenview.ts'
 import {
   addShares,
@@ -138,12 +143,14 @@ const AGENT_LIST_EVERY_MS = 5_000
 const UNLISTED_AGENT = 'unlisted (workflows, compaction)'
 
 const EMPTY_HANDOFF: HandoffState = { files: [], index: 0, text: null, error: null, hasCommand: false }
+const EMPTY_NEXT: NextState = { items: [], isThinking: false, error: null }
 
 const cacheA = atom({ plugin: 'user-hud', key: 'cache' } as const, EMPTY_CACHE)
 const ttlA = atom({ plugin: 'user-hud', key: 'ttl' } as const, { ttl: '1h', source: 'default' } as TtlInfo)
 const handoffA = atom({ plugin: 'user-hud', key: 'handoff' } as const, EMPTY_HANDOFF)
 const hudA = atom({ plugin: 'user-hud', key: 'hud' } as const, { isOpen: false, model: null, effort: null, ultracode: false, overage: null } as HudState)
 const tokensA = atom({ plugin: 'user-hud', key: 'tokens' } as const, emptyTokens(null))
+const nextA = atom({ plugin: 'user-hud', key: 'next' } as const, EMPTY_NEXT)
 
 type Cfg = {
   warnMs: number
@@ -190,6 +197,10 @@ const gridFaults = new Set<string>()
 /** Set when the rows seen going in no longer say what the context holds: after a compaction or a resume. */
 let needsMeasure = false
 let requestsSinceMeasure = 0
+/** The person's last prompt, which the next steps follow on from. */
+let lastPrompt = ''
+/** Counts asks for next steps: an answer that lands after a newer ask (or a new turn) is dropped. */
+let nextAsks = 0
 
 // ---------- prompt cache ----------
 
@@ -440,6 +451,7 @@ async function runAction($: EngineInterface, action: unknown) {
   if (action === 'tokens:refresh') return refreshStanding($, true)
   if (action === 'tokens:reset') return restartTokens($)
   if (action.startsWith('handoff:')) return pressHandoff($, action.slice('handoff:'.length))
+  if (action.startsWith('next:')) return pickNext($, Number(action.slice('next:'.length)))
 }
 
 /** The Handoff pane's actions: continue from the note shown, step to an older or newer one, look again. */
@@ -634,6 +646,40 @@ async function setOption($: EngineInterface, field: string, value: boolean | str
   $.ui.invalidate('ui.render')
 }
 
+// ---------- next steps ----------
+
+/** After a main reply: a short call on the last prompt and the reply alone asks what the person may send next. */
+async function askNext($: EngineInterface, answer: string) {
+  const ask = ++nextAsks
+  await update($, nextA, () => ({ items: [], isThinking: true, error: null }))
+  const r = await $.model
+    .complete({ model: NEXT_MODEL, system: NEXT_SYSTEM, prompt: nextRequest(lastPrompt, answer), maxTokens: 200, timeoutMs: 20_000 })
+    .catch(err => ({ isAnswered: false as const, why: String(err).slice(0, 80) }))
+  if (ask !== nextAsks) return
+  if (r.isAnswered) {
+    const usage = r.usage
+    if (cfg.modules.tokens) await update($, tokensA, s => attributePlugin(s, usage, 'user-hud')).catch(() => {})
+    await update($, nextA, () => ({ items: parseNext(r.text), isThinking: false, error: null }))
+    return
+  }
+  const why = 'why' in r ? r.why : r.reason === 'api-error' ? `API ${r.status ?? 'error'}` : r.reason
+  await update($, nextA, () => ({ items: [], isThinking: false, error: `no next steps this time (${why})` }))
+}
+
+/** A new turn or conversation: the suggestions no longer follow on, and any ask still out is dropped. */
+async function clearNext($: EngineInterface) {
+  nextAsks += 1
+  await update($, nextA, () => EMPTY_NEXT)
+}
+
+/** A suggestion picked: it goes in the prompt box as a draft to edit or send. */
+async function pickNext($: EngineInterface, index: number) {
+  const text = (await read($, nextA)).items[index]
+  if (!text) return
+  const r = await $.prompt.fill({ text, mode: 'replace' }).catch(() => null)
+  if (!r?.isFilled) $.ui.toast(r?.refusal === 'dialog' ? 'Close the dialog first, then pick the next step again.' : 'Could not put the next step in the prompt box.')
+}
+
 /** `/hud <module> on|off`: writes the module's /config row; the reload that follows registers its commands and work. */
 async function setModule($: EngineInterface, id: ModuleId, isOn: boolean): Promise<string> {
   if (cfg.modules[id] === isOn) return `The ${id} module is already ${isOn ? 'on' : 'off'}.`
@@ -721,6 +767,8 @@ export const register: Register = (on, given) => {
   standingAt = 0
   needsMeasure = false
   requestsSinceMeasure = 0
+  lastPrompt = ''
+  nextAsks = 0
 
   // ---------- lifecycle ----------
 
@@ -767,6 +815,11 @@ export const register: Register = (on, given) => {
 
   on('turn.start', async ($, e, next) => {
     await update($, cacheA, s => ({ ...s, isWorking: true, autoPings: 0 }))
+    if (cfg.modules.next) {
+      // What the person sent: the next steps follow on from it, and the old ones no longer do.
+      lastPrompt = e.text
+      await clearNext($).catch(() => {})
+    }
     return next(e)
   })
 
@@ -778,6 +831,7 @@ export const register: Register = (on, given) => {
         void scanHandoffs($)
       }
       if (cfg.modules.tokens) void refreshStanding($).catch(() => {})
+      if (cfg.modules.next && e.reason === 'answer' && !e.isAborted && e.answer.trim()) void askNext($, e.answer).catch(() => {})
     }
     return next(e)
   })
@@ -855,6 +909,7 @@ export const register: Register = (on, given) => {
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') await reset($, 'cleared')
     if (e.reason === 'clear' || e.reason === 'resume') await resetTokens($)
+    if (e.reason === 'clear' || e.reason === 'resume') await clearNext($)
     return next(e)
   })
 
@@ -950,6 +1005,7 @@ export const register: Register = (on, given) => {
     const hud = await read($, hudA)
     const handoff = await read($, handoffA)
     const tokens = await read($, tokensA)
+    const nx = await read($, nextA)
     const ui: Ui = $.ui.resolve(e)
     const { Box } = ui
     const now = await $.clock.now()
@@ -983,6 +1039,7 @@ export const register: Register = (on, given) => {
         : null,
       cache: mods.cache ? cacheRuns(c, t.ttl, lv, rem) : null,
       settings: settingsView(c),
+      next: mods.next ? { items: nx.items, note: nx.isThinking ? 'thinking of next steps…' : nx.error } : null,
       handoff: mods.handoff ? { hasNewest: newestNote !== undefined, note: newestNote ? `newest · ${age(newestNote.mtimeMs, now)}` : 'no notes yet' } : null,
     })
     // flexGrow: the desktop sets the tree beside its own collapse control in a row, where an ungrown

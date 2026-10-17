@@ -8,7 +8,7 @@
     {
       "name": "user-hud",
       "source": "./plugins/user-hud",
-      "description": "A control panel tucked into the corner above the Claude Code prompt, in four modules you turn on or off: where your tokens go (files, chat, MCP, shell, skills and plugins, subagents and more), model and effort pickers in three styles, prompt-cache countdown with a 2-minute keep-warm alert, quick settings, and handoff buttons."
+      "description": "A control panel tucked into the corner above the Claude Code prompt, in five modules you turn on or off: where your tokens go (files, chat, MCP, shell, skills and plugins, subagents and more), model and effort pickers in three styles, prompt-cache countdown with a 2-minute keep-warm alert, handoff buttons, and next steps (follow-up prompts after each reply, one key to put in the prompt box)."
     },
     {
       "name": "code-reference",

@@ -48,6 +48,6 @@ test('/hud arguments: nothing toggles the panel, modules lists them, <module> on
 })
 
 test('every module is on unless its /config row says off', () => {
-  expect(modulesFrom({})).toEqual({ cache: true, pickers: true, tokens: true, handoff: true })
-  expect(modulesFrom({ tokensModule: false, cacheModule: 'false' })).toEqual({ cache: true, pickers: true, tokens: false, handoff: true })
+  expect(modulesFrom({})).toEqual({ cache: true, pickers: true, tokens: true, handoff: true, next: true })
+  expect(modulesFrom({ tokensModule: false, cacheModule: 'false' })).toEqual({ cache: true, pickers: true, tokens: false, handoff: true, next: true })
 })

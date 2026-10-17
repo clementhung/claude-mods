@@ -1,10 +1,10 @@
 {
   "name": "user-hud",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "author": {
     "name": "Polar"
   },
-  "description": "A control panel tucked into the corner above the Claude Code prompt, in four modules you turn on or off: where your tokens go (files, chat, MCP, shell, skills and plugins, subagents and more), model and effort pickers in three styles, prompt-cache countdown with a 2-minute keep-warm alert, quick settings, and handoff buttons.",
+  "description": "A control panel tucked into the corner above the Claude Code prompt, in five modules you turn on or off: where your tokens go (files, chat, MCP, shell, skills and plugins, subagents and more), model and effort pickers in three styles, prompt-cache countdown with a 2-minute keep-warm alert, handoff buttons, and next steps (follow-up prompts after each reply, one key to put in the prompt box).",
   "types": "./types/index.d.ts",
   "license": "MIT",
   "keywords": [
@@ -13,7 +13,8 @@
     "tokens",
     "usage",
     "handoff",
-    "mod"
+    "mod",
+    "next-steps"
   ],
   "userConfig": {
     "cacheModule": {
@@ -38,6 +39,12 @@
       "type": "boolean",
       "title": "Module: handoff",
       "description": "Write handoff and Read handoff, with /read-handoff.",
+      "default": true
+    },
+    "nextModule": {
+      "type": "boolean",
+      "title": "Module: next steps",
+      "description": "After each reply, up to three follow-up prompts in the panel; 1, 2 or 3 puts one in the prompt box to edit or send. Each reply costs one short Haiku call on the last prompt and reply, not the whole conversation.",
       "default": true
     },
     "warnSeconds": {
