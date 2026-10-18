@@ -32,10 +32,28 @@ test('the Handoff pane: with no note, a way to write one; with notes, where it i
 test('the Tokens pane fits a narrow dock: each group’s numbers move to a line of their own', () => {
   let s = addShares(emptyTokens(0), [{ group: 'files', kind: 'Read', item: 'a.ts', tokens: 9_000 }])
   s = attributeRequest(s, contextWeights(s), { input_tokens: 0, cache_read_input_tokens: 10_000, cache_creation_input_tokens: 0, output_tokens: 0 }, { answer: '', toolUses: [] })
-  const wide = plain(tokensPaneGrid(s, 90))
-  expect(wide).toContainEqual(expect.stringMatching(/^■ Files {15}90% {14}9k used · 9k in context · 0 calls$/))
-  const narrow = plain(tokensPaneGrid(s, 44))
-  expect(narrow).toContainEqual(expect.stringMatching(/^■ Files {15}90% {14}$/))
+  const wide = plain(tokensPaneGrid(s, 90, []))
+  expect(wide).toContainEqual(expect.stringMatching(/^▸ ■ Files {15}90% {14}9k used · 9k in context · 0 calls$/))
+  const narrow = plain(tokensPaneGrid(s, 44, []))
+  expect(narrow).toContainEqual(expect.stringMatching(/^▸ ■ Files {15}90% {14}$/))
   expect(narrow).toContainEqual('  9k used · 9k in context · 0 calls')
   for (const l of narrow) expect(l.length).toBeLessThanOrEqual(44)
+})
+
+test('the Tokens pane: a group opens to its sub-items, each with what it used, its share of the group and its context', () => {
+  let s = addShares(emptyTokens(0), [
+    { group: 'files', kind: 'Read', item: 'a.ts', tokens: 6_000 },
+    { group: 'files', kind: 'Read', item: 'b.ts', tokens: 3_000 },
+  ])
+  s = attributeRequest(s, contextWeights(s), { input_tokens: 0, cache_read_input_tokens: 10_000, cache_creation_input_tokens: 0, output_tokens: 0 }, { answer: '', toolUses: [] })
+  const closed = tokensPaneGrid(s, 90, [])
+  expect(textOf(closed, 'tokens:group:files')).toMatch(/^▸ ■ Files/)
+  expect(plain(closed).some(l => /a\.ts/.test(l))).toBe(false)
+  const open = tokensPaneGrid(s, 90, ['files'])
+  expect(textOf(open, 'tokens:group:files')).toMatch(/^▾ ■ Files/)
+  const rows = plain(open)
+  const head = rows.findIndex(l => l.startsWith('▾ ■ Files'))
+  expect(rows[head + 1]).toMatch(/^ {4}a\.ts +6k +67% +6k in context$/)
+  expect(rows[head + 2]).toMatch(/^ {4}b\.ts +3k +33% +3k in context$/)
+  for (const l of plain(tokensPaneGrid(s, 44, ['files']))) expect(l.length).toBeLessThanOrEqual(44)
 })

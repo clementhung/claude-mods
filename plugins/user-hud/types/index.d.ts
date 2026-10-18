@@ -82,7 +82,15 @@ export type GroupTally = {
   spent: Record<string, number>
   /** Tool calls, prompts, skills or requests that landed here. */
   calls: number
+  /**
+   * The group by sub-item (a file, a server, a plugin, the system prompt): what each used of the group's
+   * real tokens, split the way the group's own are, so they add up to `used`; and what each holds now.
+   */
+  lines: Record<string, LineTally>
 }
+
+/** One sub-item of a group: real tokens it accounts for this session, and estimated tokens it holds now. */
+export type LineTally = { used: number; inContext: number }
 
 /** Token counts as the API reported them, summed over requests. */
 export type ApiTally = {
@@ -105,6 +113,8 @@ export type TokenState = {
   standing: Partial<Record<GroupId, number>>
   /** The MCP tool schemas each request carries, by server. */
   schemas: Record<string, number>
+  /** What each request carries before the conversation, per group by sub-item (the system prompt, a server's schemas). */
+  standingLines: Partial<Record<GroupId, Record<string, number>>>
   /** The session's cost in US dollars, as /cost totals it; null where the host keeps no ledger. */
   costUsd: number | null
   /** What the session had cost when counting began (a Reset, a /clear): the tally's cost is what came after. */
@@ -132,6 +142,8 @@ declare module 'claude-code' {
       hud: HudState
       tokens: TokenState
       next: NextState
+      /** The groups opened in the Tokens pane. */
+      tokensOpen: GroupId[]
     }
   }
 }

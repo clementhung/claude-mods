@@ -8,6 +8,8 @@ import {
   attributePlugin,
   attributeRequest,
   capItems,
+  capLines,
+  contextLinesOf,
   contextOf,
   restarted,
   trimmedTo,
@@ -21,6 +23,8 @@ import {
   ranked,
   stack,
   standingFrom,
+  standingLinesFrom,
+  withContext,
   summary,
   totalUsed,
 } from '../hooks/tokens.ts'
@@ -213,6 +217,14 @@ test('the context is measured from the messages: results by their calls, a skill
   expect(held.thinking).toBe(20)
   expect(held.files).toBeGreaterThan(2_000)
   expect(held.skills).toBe(7 + 7 + 500 + 11)
+  // The same, by sub-item: they add up to each group's.
+  const lines = contextLinesOf([
+    { role: 'user', content: [text(400)] },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: 'src/a.ts' } }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'r1', content: 'x'.repeat(8_000) }] },
+  ])
+  expect(lines.chat).toEqual({ you: 100 })
+  expect(Object.keys(lines.files)).toEqual(['a.ts'])
 })
 
 test('a periodic measurement trims only the groups the messages measure exactly; Reset keeps the context', () => {
@@ -235,4 +247,98 @@ test('a periodic measurement trims only the groups the messages measure exactly;
   expect(fresh.groups.files.inContext).toBe(1_000)
   expect(fresh.groups.skills.inContext).toBe(500)
   expect(summary({ ...attributeRequest(fresh, contextWeights(fresh), usage, { answer: '', toolUses: [] }), costUsd: 2 })).toContain('· $0.50')
+})
+
+test('each group’s sub-items split its real tokens between them and add up to what the group used', () => {
+  let s = emptyTokens(0)
+  s = {
+    ...s,
+    standing: { system: 20_000, mcp: 5_000 },
+    standingLines: { system: { 'System prompt': 8_000, 'System tools': 12_000 }, mcp: { linear: 4_000, notion: 1_000 } },
+  }
+  s = addShares(s, [
+    { group: 'chat', kind: 'you', tokens: 1_000, calls: 1 },
+    { group: 'files', kind: 'Read', item: 'a.ts', tokens: 6_000 },
+    { group: 'files', kind: 'Read', item: 'b.ts', tokens: 3_000 },
+  ])
+  const usage = { input_tokens: 2_000, cache_read_input_tokens: 36_000, cache_creation_input_tokens: 2_000, output_tokens: 1_000 }
+  s = attributeRequest(s, contextWeights(s), usage, { answer: 'x'.repeat(400), toolUses: [{ name: 'Bash', input: { command: 'ls' } }] })
+  s = attributeAgent(s, usage, 'Explore')
+  s = attributePlugin(s, usage, 'ask')
+  for (const id of GROUP_IDS) {
+    const sum = Object.values(s.groups[id].lines).reduce((n, l) => n + l.used, 0)
+    expect(Math.round(sum), id).toBe(Math.round(s.groups[id].used))
+  }
+  expect(s.groups.files.lines).toEqual({ 'a.ts': { used: 6_000, inContext: 6_000 }, 'b.ts': { used: 3_000, inContext: 3_000 } })
+  // The 5k the request carried past what the groups hold goes with the system prompt and tools, split as they are.
+  expect(s.groups.system.lines).toEqual({ 'System prompt': { used: 10_000, inContext: 0 }, 'System tools': { used: 15_000, inContext: 0 } })
+  expect(s.groups.mcp.lines).toEqual({ linear: { used: 4_000, inContext: 0 }, notion: { used: 1_000, inContext: 0 } })
+  expect(s.groups.chat.lines).toEqual({ you: { used: 1_000, inContext: 1_000 }, Claude: { used: 100, inContext: 0 } })
+  expect(Object.keys(s.groups.shell.lines)).toEqual(['ls'])
+  expect(Object.keys(s.groups.thinking.lines)).toEqual(['reasoning'])
+  // Subagents and plugins: whole, under who spent.
+  expect(s.groups.agents.lines).toEqual({ Explore: { used: 41_000, inContext: 0 } })
+  expect(s.groups.skills.lines).toEqual({ ask: { used: 41_000, inContext: 0 } })
+
+  // Before the breakdown names them, what the request carried past the groups is one line.
+  const blind = attributeRequest(emptyTokens(0), { ...contextWeights(emptyTokens(0)), files: 9_000 }, usage, { answer: '', toolUses: [] })
+  expect(Object.keys(blind.groups.system.lines)).toEqual(['system prompt & tools'])
+  // A group holding tokens no row named (measured before counting began): one line for them.
+  expect(Object.keys(blind.groups.files.lines)).toEqual(['unattributed'])
+})
+
+test('a sub-item’s context follows the measurements; a compaction empties it, Reset keeps it', () => {
+  let s = addShares(emptyTokens(0), [
+    { group: 'files', kind: 'Read', item: 'a.ts', tokens: 9_000 },
+    { group: 'skills', kind: 'hooks', item: 'PostToolUse', tokens: 500 },
+  ])
+  const measuredLines = { ...contextLinesOf([]), files: { 'a.ts': 1_000 } }
+  s = trimmedTo(s, { ...contextOf([]), files: 1_000 }, measuredLines)
+  expect(s.groups.files.lines['a.ts']?.inContext).toBe(1_000)
+  // Not measured exactly: what its rows said stays.
+  expect(s.groups.skills.lines.PostToolUse?.inContext).toBe(500)
+  s = withContext(s, { ...contextOf([]), files: 2_000 }, { ...contextLinesOf([]), files: { 'a.ts': 1_200, 'b.ts': 800 } })
+  expect(s.groups.files.lines).toEqual({ 'a.ts': { used: 0, inContext: 1_200 }, 'b.ts': { used: 0, inContext: 800 } })
+  expect(s.groups.skills.lines.PostToolUse?.inContext).toBe(0)
+
+  const usage = { input_tokens: 0, cache_read_input_tokens: 2_000, cache_creation_input_tokens: 0, output_tokens: 0 }
+  s = attributeRequest(s, contextWeights(s), usage, { answer: '', toolUses: [] })
+  const fresh = restarted(s, 99)
+  expect(fresh.groups.files.lines).toEqual({ 'a.ts': { used: 0, inContext: 1_200 }, 'b.ts': { used: 0, inContext: 800 } })
+  expect(Object.values(compacted(s).groups.files.lines).every(l => l.inContext === 0)).toBe(true)
+})
+
+test('sub-items are capped, the smallest folded into one; the breakdown names what every request carries', () => {
+  const many = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`f${i}`, { used: i + 1, inContext: 1 }]))
+  const kept = capLines(many, 5)
+  expect(Object.keys(kept)).toHaveLength(5)
+  expect(kept.f29).toEqual({ used: 30, inContext: 1 })
+  expect(Object.values(kept).reduce((a, b) => a + b.used, 0)).toBe(Object.values(many).reduce((a, b) => a + b.used, 0))
+  expect(kept.other?.inContext).toBe(26)
+
+  const lines = standingLinesFrom({
+    categories: [
+      { name: 'System prompt', tokens: 9_000, kind: 'used' },
+      { name: 'System tools', tokens: 12_000, kind: 'used' },
+      { name: 'Memory files', tokens: 500, kind: 'used' },
+      { name: 'MCP tools', tokens: 4_000, kind: 'used' },
+      { name: 'Custom agents', tokens: 300, kind: 'used' },
+      { name: 'Skills', tokens: 1_200, kind: 'used' },
+      { name: 'Messages', tokens: 50_000, kind: 'used' },
+      { name: 'Free space', tokens: 100_000, kind: 'free' },
+    ],
+    mcpTools: [
+      { serverName: 'linear', tokens: 3_000, isLoaded: true },
+      { serverName: 'notion', tokens: 1_000, isLoaded: true },
+    ],
+    memoryFiles: [{ tokens: 500 }],
+    agents: [{ tokens: 300 }],
+    skills: { tokens: 1_200 },
+  })
+  expect(lines).toEqual({
+    system: { 'System prompt': 9_000, 'System tools': 12_000, 'Memory files': 500 },
+    mcp: { linear: 3_000, notion: 1_000 },
+    skills: { 'skill listing': 1_200 },
+    agents: { 'agent descriptions': 300 },
+  })
 })

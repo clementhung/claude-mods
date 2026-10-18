@@ -61,7 +61,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelForkResult, Register } from 'claude-code'
 
-import type { CacheState, CacheTtl, HandoffFile, HandoffState, HudState, NextState, PlanLimit, SelectorStyle, TtlInfo } from '../types'
+import type { CacheState, CacheTtl, GroupId, HandoffFile, HandoffState, HudState, NextState, PlanLimit, SelectorStyle, TtlInfo } from '../types'
 import {
   EMPTY_CACHE,
   KEEP_WARM_PROMPT,
@@ -97,7 +97,7 @@ import type { GridField } from './selectorgrid.ts'
 import type { Ui } from './ui.ts'
 import { handoffPaneGrid } from './handoffview.ts'
 import { NEXT_MODEL, NEXT_SYSTEM, nextRequest, parseNext } from './next.ts'
-import { tokensPaneGrid } from './tokenview.ts'
+import { parseGroupAction, tokensPaneGrid } from './tokenview.ts'
 import {
   addShares,
   attributeAgent,
@@ -105,14 +105,18 @@ import {
   attributeRequest,
   classifyRow,
   compacted,
-  contextOf,
+  contextLinesOf,
   contextWeights,
   emptyTokens,
+  GROUP_IDS,
   groupOf,
+  heldOf,
+  lineWeights,
   mcpSchemas,
   restarted,
   stack,
   standingFrom,
+  standingLinesFrom,
   summary,
   totalUsed,
   trimmedTo,
@@ -149,6 +153,7 @@ const handoffA = atom({ plugin: 'user-hud', key: 'handoff' } as const, EMPTY_HAN
 const hudA = atom({ plugin: 'user-hud', key: 'hud' } as const, { isOpen: false, model: null, effort: null, ultracode: false, overage: null, contextPercent: null } as HudState)
 const tokensA = atom({ plugin: 'user-hud', key: 'tokens' } as const, emptyTokens(null))
 const nextA = atom({ plugin: 'user-hud', key: 'next' } as const, EMPTY_NEXT)
+const tokensOpenA = atom({ plugin: 'user-hud', key: 'tokensOpen' } as const, [] as GroupId[])
 
 type Cfg = {
   warnMs: number
@@ -448,6 +453,11 @@ async function runAction($: EngineInterface, action: unknown) {
   if (action === 'readhandoff') return openHandoffPane($)
   if (action === 'tokens:refresh') return refreshStanding($, true)
   if (action === 'tokens:reset') return restartTokens($)
+  const group = parseGroupAction(action)
+  if (group !== null && (GROUP_IDS as readonly string[]).includes(group)) {
+    const id = group as GroupId
+    return update($, tokensOpenA, open => (open.includes(id) ? open.filter(g => g !== id) : [...open, id]))
+  }
   if (action.startsWith('handoff:')) return pressHandoff($, action.slice('handoff:'.length))
   if (action.startsWith('next:')) return pickNext($, Number(action.slice('next:'.length)))
 }
@@ -576,7 +586,7 @@ async function refreshStanding($: EngineInterface, isForced = false) {
   const usage = await $.session.usage({ breakdown: 'summary' }).catch(() => null)
   const b = usage?.context.breakdown
   if (!b) return
-  await update($, tokensA, s => ({ ...s, standing: standingFrom(b), schemas: mcpSchemas(b) }))
+  await update($, tokensA, s => ({ ...s, standing: standingFrom(b), schemas: mcpSchemas(b), standingLines: standingLinesFrom(b) }))
 }
 
 async function agentType($: EngineInterface, agentId: string): Promise<string> {
@@ -597,8 +607,9 @@ async function agentType($: EngineInterface, agentId: string): Promise<string> {
 async function measureContext($: EngineInterface, how: 'replace' | 'trim') {
   needsMeasure = false
   requestsSinceMeasure = 0
-  const held = contextOf(await $.session.messages({ as: 'api' }))
-  await update($, tokensA, s => (how === 'replace' ? withContext(s, held) : trimmedTo(s, held)))
+  const lines = contextLinesOf(await $.session.messages({ as: 'api' }))
+  const held = heldOf(lines)
+  await update($, tokensA, s => (how === 'replace' ? withContext(s, held, lines) : trimmedTo(s, held, lines)))
 }
 
 /** A model call made beside the conversation: credited to the plugin that made it (this one's pings are counted where they are sent). */
@@ -863,13 +874,15 @@ export const register: Register = (on, given) => {
       if (needsMeasure) await measureContext($, 'replace').catch(() => {})
       else if (requestsSinceMeasure >= MEASURE_EVERY) await measureContext($, 'trim').catch(() => {})
     }
-    const weights = tokens ? await read($, tokensA).then(contextWeights, () => null) : null
+    const before = tokens ? await read($, tokensA).catch(() => null) : null
+    const weights = before ? contextWeights(before) : null
+    const lines = before ? lineWeights(before) : null
     const result = yield* next(e)
     try {
       const usage = result.usage
       if (usage) {
         if (cache) await update($, cacheA, s => afterRequest(s, at, usage, usage.model))
-        if (weights) await update($, tokensA, s => attributeRequest(s, weights, usage, { answer: result.answer, toolUses: result.toolUses }))
+        if (weights && lines) await update($, tokensA, s => attributeRequest(s, weights, usage, { answer: result.answer, toolUses: result.toolUses }, lines))
       }
     } catch {
       // Never disturb the turn over a display.
@@ -1093,7 +1106,7 @@ export const register: Register = (on, given) => {
 
   on('ui.render', { component: 'Pane', requestId: TOKENS_PANE }, async ($, e) => {
     const ui: Ui = $.ui.resolve(e)
-    const grid = tokensPaneGrid(await read($, tokensA), Math.max(20, e.props.bodyColumns))
+    const grid = tokensPaneGrid(await read($, tokensA), Math.max(20, e.props.bodyColumns), await read($, tokensOpenA))
     return cellsElement(ui, e.surface, 'tokens', grid, a => void runAction($, a))
   })
 
