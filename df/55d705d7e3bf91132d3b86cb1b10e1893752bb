@@ -1,0 +1,37 @@
+plugins/user-hud/hooks/tokens.ts
+  s_c51b76df9000e0::t_cd9ccecaa3907a 8,40-43,49,59,148-165,353-355,357-361,368,376,379,381,388-406,419-429,440-448,451,471-490,502,510-513,525-535,559-563,565-582,586-594,598-599,604-608,619,630,635-638,668-681
+  s_c51b76df9000e0::t_70fcbee42a5b50 682
+plugins/user-hud/tests/panes.test.ts
+  s_c51b76df9000e0::t_7911c5a2fff1ac 35-38,42-58
+  s_c51b76df9000e0::t_10f7bb6375fec6 59
+plugins/user-hud/types/index.d.ts
+  s_c51b76df9000e0::t_6acb0e93520997 83-87,90-92,114-115,143-144
+plugins/user-hud/hooks/register.tsx
+  s_c51b76df9000e0::t_4ef4f3f7a0080e 64,100,108,111,113-114,121,158,458-462,591,612-614,877-879,885,1111
+plugins/user-hud/tests/register.test.tsx
+  s_c51b76df9000e0::t_7911c5a2fff1ac 1074-1082
+plugins/user-hud/tests/tokens.test.ts
+  s_c51b76df9000e0::t_7911c5a2fff1ac 11-12,26-27,220-227,251-344
+plugins/user-hud/hooks/tokenview.ts
+  s_c51b76df9000e0::t_673b74fbe521d9 2,7,10-15,24-27,31,35,42,46,48-59,64,80
+plugins/user-hud/.claude-plugin/plugin.json
+  s_c51b76df9000e0::t_06f92dd0db8cfc 3
+plugins/user-hud/README.md
+  s_c51b76df9000e0::t_06f92dd0db8cfc 80-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "df55d705d7e3bf91132d3b86cb1b10e1893752bb",
+  "prompts": {},
+  "sessions": {
+    "s_c51b76df9000e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f465c35d-8263-4479-b0e3-0cb3483ca584",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "clementhung <clement.hung@foodpanda.com>"
+    }
+  }
+}
