@@ -27,7 +27,7 @@ Turn a module off and it leaves the panel and the closed row, its commands are n
 Closed, it is one row at the right edge:
 
 ```
-                     ◆ 52:10   1.2M tokens   Sonnet 5.5 · XHigh   ◆ user-hud ▴
+        ◆ 52:10   context 34%   1.2M tokens   Sonnet 5.5 · XHigh   ◆ user-hud ▴
 ```
 
 The model is drawn in its colour and the effort in its own, letter by letter (the whole rainbow for Ultracode).
@@ -39,7 +39,7 @@ MODEL       Haiku 4.5      Sonnet 5.5       Opus 5.5       Fable 5.1
          ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ ███████████████ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 EFFORT     Low     Medium    High     XHigh     Max    Ultracode
          ▔▔▔▔▔▔▔▔▔ ▔▔▔▔▔▔▔▔▔ ▔▔▔▔▔▔▔▔▔ █████████ ▔▔▔▔▔▔▔▔▔ ▔▔▔▔▔▔▔▔▔
-TOKENS  ████████████████ 1.2M · Files 38% · System & memory 21%   t: Details
+TOKENS  ████████████████ 1.2M · context 34%                       t: Details
 ── C A C H E ───────────────────────────────────────────────────────────
 ◆ cache 52:10 ▰▰▰▰▰▰▰▰▰▱ 182k cached · hit 94% · 1h          [ Keep warm ]
 ── S E T T I N G S ─────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ The pickers are part of the band's grid: click an option to pick it, or move to 
 
 ## Tokens
 
-The **TOKENS** row is one stacked bar of where this session's tokens went, with the total and the two largest groups. **Details** (`t`), or `/tokens`, opens the Tokens pane, a grid of cells like the band (**Refresh** `r`, **Reset** `x`): the API's own totals (cache read, cache write, new input, output, and the cost where Claude Code keeps one), then each group with its share, what it used, what it holds in the context now, and its calls. Press a group (▸) to open it (▾): its sub-items, most used first, each with the tokens it used, its share of the group, and what it holds in the context now.
+The **TOKENS** row is one stacked bar of where this session's tokens went, with the total and how full the context window is now (`context 34%`, the figure the status line reads). The closed row shows the context figure too. **Details** (`t`), or `/tokens`, opens the Tokens pane, a grid of cells like the band (**Refresh** `r`, **Reset** `x`): the API's own totals (cache read, cache write, new input, output, and the cost where Claude Code keeps one), then each group with its share, what it used, what it holds in the context now, and its calls. Press a group (▸) to open it (▾): its sub-items, most used first, each with the tokens it used, its share of the group, and what it holds in the context now.
 
 ```
 ▾ ■ Skills & plugins    6% █░░░░░░░░░░░ 1.2M used · 9k in context · 14 calls
