@@ -1071,8 +1071,15 @@ test('the TOKENS row shows the split and opens the Tokens pane; /clear starts th
     for (const label of ['Files', 'MCP', 'Skills & plugins', 'Thinking', 'System & memory', 'Chat', 'Shell']) {
       expect(await shows(pane, label, 'tokens'), label).toBe(true)
     }
-    expect(await shows(pane, /register\.tsx 20k/, 'tokens')).toBe(true)
-    expect(await shows(pane, /pstack:tdd 3k/, 'tokens')).toBe(true)
+    // A group opens to its sub-items when pressed, and closes again.
+    expect(await shows(pane, /^ {4}register\.tsx +\d+k +\d+%/, 'tokens')).toBe(false)
+    await act(pane, 'tokens:group:files', 'tokens')
+    expect(await shows(pane, /^ {4}register\.tsx +\d+k +\d+%/, 'tokens')).toBe(true)
+    await act(pane, 'tokens:group:skills', 'tokens')
+    expect(await shows(pane, /^ {4}pstack:tdd +\d+k +\d+%/, 'tokens')).toBe(true)
+    await act(pane, 'tokens:group:files', 'tokens')
+    expect(await shows(pane, /^ {4}register\.tsx +\d+k +\d+%/, 'tokens')).toBe(false)
+    await act(pane, 'tokens:group:skills', 'tokens')
     await pane.unmount()
   }
   expect(w.opens.filter(id => id === 'tokens')).toHaveLength(2)

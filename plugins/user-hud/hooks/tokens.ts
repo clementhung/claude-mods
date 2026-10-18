@@ -5,7 +5,7 @@
 // each main-thread request's input, as the API counted it, split across the groups by what they held
 // in the context when it went out; its output split by what was written (reply text, tool arguments,
 // thinking as the rest). So the groups' `used` adds up to the API's own totals.
-import type { ApiTally, GroupId, GroupTally, TokenState } from '../types'
+import type { ApiTally, GroupId, GroupTally, LineTally, TokenState } from '../types'
 import { fmtTokens } from './cache.ts'
 
 /**
@@ -37,12 +37,16 @@ export const DOCUMENT_TOKENS = 3_000
 /** Subjects kept per group; the smallest fold into one entry past it. */
 export const MAX_ITEMS = 24
 const FOLDED = 'other'
+/** A group's tokens no row named: what it held when counting began, or measured without a subject. */
+export const UNATTRIBUTED = 'unattributed'
+/** What a request carried past every group, before the context breakdown names the system prompt and tools. */
+export const SYSTEM_EXTRA = 'system prompt & tools'
 
 export const estimate = (chars: number) => (chars > 0 ? Math.ceil(chars / CHARS_PER_TOKEN) : 0)
 
 const EMPTY_API: ApiTally = { requests: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }
 
-const emptyGroup = (): GroupTally => ({ used: 0, inContext: 0, kinds: {}, items: {}, spent: {}, calls: 0 })
+const emptyGroup = (): GroupTally => ({ used: 0, inContext: 0, kinds: {}, items: {}, spent: {}, calls: 0, lines: {} })
 
 export function emptyTokens(since: number | null): TokenState {
   return {
@@ -52,6 +56,7 @@ export function emptyTokens(since: number | null): TokenState {
     plugins: EMPTY_API,
     standing: {},
     schemas: {},
+    standingLines: {},
     costUsd: null,
     costBase: 0,
     since,
@@ -138,6 +143,24 @@ export function attribute(name: string, input: unknown): Attribution {
   if (SKILL_TOOLS.has(name)) return { group: 'skills', kind: 'skill', item: field(input, 'skill') ?? field(input, 'command') }
   if (name === 'ToolSearch') return { group: 'system', kind: 'tool schemas' }
   return { group: 'other', kind: name }
+}
+
+/**
+ * The sub-item a share is listed under in its group: MCP by server; Chat, Thinking, Other tools and
+ * System by kind, but a memory file by its name; the rest by subject, or by kind where there is none.
+ */
+export function lineOf(a: { group: GroupId; kind: string; item?: string }): string {
+  switch (a.group) {
+    case 'mcp':
+    case 'chat':
+    case 'thinking':
+    case 'other':
+      return a.kind
+    case 'system':
+      return a.kind === 'memory' ? (a.item ?? a.kind) : a.kind
+    default:
+      return a.item ?? a.kind
+  }
 }
 
 // ---------- reading a row ----------
@@ -327,19 +350,22 @@ function userTextShare(text: string, tokens: number, afterSkill: string | null |
 }
 
 /**
- * What each group holds in the context, measured from the messages the next request is built from: after
- * a load (a resume, a reload), a compaction, or whenever the engine has trimmed old tool results, the rows
- * seen going in no longer say. A Skill call's body, which follows its result, counts as that skill.
+ * What each group holds in the context, by sub-item, measured from the messages the next request is built
+ * from: after a load (a resume, a reload), a compaction, or whenever the engine has trimmed old tool
+ * results, the rows seen going in no longer say. A Skill call's body, which follows its result, counts as that skill.
  */
-export function contextOf(messages: readonly ApiMessage[]): Record<GroupId, number> {
-  const held = Object.fromEntries(GROUP_IDS.map(id => [id, 0])) as Record<GroupId, number>
+export function contextLinesOf(messages: readonly ApiMessage[]): Record<GroupId, Record<string, number>> {
+  const held = Object.fromEntries(GROUP_IDS.map(id => [id, {}])) as Record<GroupId, Record<string, number>>
+  const add = (sh: Share) => {
+    if (sh.tokens > 0) held[sh.group] = bump(held[sh.group], lineOf(sh), sh.tokens)
+  }
   const calls = new Map<string, Attribution>()
   for (const m of messages) {
     const blocks: readonly Block[] = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content
     if (m.role === 'assistant') {
       const { shares, uses } = classifyRow({ door: 'response', origin: { kind: 'model' }, message: { type: 'assistant', role: 'assistant', content: blocks } }, () => undefined, null)
       for (const u of uses) calls.set(u.id, u)
-      for (const sh of shares) held[sh.group] += sh.tokens
+      for (const sh of shares) add(sh)
       continue
     }
     // undefined: no Skill result yet in this message; a name (or null) once one came.
@@ -347,22 +373,37 @@ export function contextOf(messages: readonly ApiMessage[]): Record<GroupId, numb
     for (const b of blocks) {
       if (b.type === 'tool_result') {
         const at = calls.get(str(b.tool_use_id) ?? '') ?? attribute('tool', undefined)
-        held[at.group] += blockTokens(b)
+        add({ ...at, tokens: blockTokens(b) })
         afterSkill = at.group === 'skills' && at.kind === 'skill' ? at.item ?? null : undefined
       } else if (b.type === 'text') {
-        const sh = userTextShare(str(b.text) ?? '', blockTokens(b), afterSkill)
-        held[sh.group] += sh.tokens
+        add(userTextShare(str(b.text) ?? '', blockTokens(b), afterSkill))
       } else {
-        held.chat += blockTokens(b)
+        add({ group: 'chat', kind: 'you', tokens: blockTokens(b) })
       }
     }
   }
   return held
 }
 
-/** Sets what each group holds in the context, as measured; what they used and added stays. */
-export function withContext(s: TokenState, held: Record<GroupId, number>): TokenState {
-  return { ...s, groups: mapGroups(s, (g, id) => ({ ...g, inContext: held[id] })) }
+/** Each group's total of what its sub-items hold. */
+export const heldOf = (lines: Record<GroupId, Record<string, number>>): Record<GroupId, number> =>
+  Object.fromEntries(GROUP_IDS.map(id => [id, Object.values(lines[id]).reduce((n, v) => n + v, 0)])) as Record<GroupId, number>
+
+/** What each group holds in the context, measured from the messages (`contextLinesOf`, group by group). */
+export const contextOf = (messages: readonly ApiMessage[]) => heldOf(contextLinesOf(messages))
+
+/** Sets what each group, and given `lines` each sub-item, holds in the context, as measured; what they used and added stays. */
+export function withContext(s: TokenState, held: Record<GroupId, number>, lines?: Record<GroupId, Record<string, number>>): TokenState {
+  return {
+    ...s,
+    groups: mapGroups(s, (g, id) => {
+      const had = linesOf(g)
+      if (!lines) return { ...g, inContext: held[id] }
+      const keys = new Set([...Object.keys(had), ...Object.keys(lines[id])])
+      const measured = Object.fromEntries([...keys].map(k => [k, { used: had[k]?.used ?? 0, inContext: lines[id][k] ?? 0 }]))
+      return { ...g, inContext: held[id], lines: capLines(measured) }
+    }),
+  }
 }
 
 /**
@@ -375,8 +416,17 @@ const MEASURED_EXACTLY: readonly GroupId[] = ['files', 'shell', 'web', 'mcp', 'a
  * Lowers what the exactly measured groups hold to the measurement, where the engine has since trimmed old
  * tool results or dropped earlier thinking; the other groups keep what their rows said.
  */
-export function trimmedTo(s: TokenState, held: Record<GroupId, number>): TokenState {
-  return { ...s, groups: mapGroups(s, (g, id) => (MEASURED_EXACTLY.includes(id) ? { ...g, inContext: Math.min(g.inContext, held[id]) } : g)) }
+export function trimmedTo(s: TokenState, held: Record<GroupId, number>, lines?: Record<GroupId, Record<string, number>>): TokenState {
+  return {
+    ...s,
+    groups: mapGroups(s, (g, id) => {
+      if (!MEASURED_EXACTLY.includes(id)) return g
+      const trimmed = lines
+        ? Object.fromEntries(Object.entries(linesOf(g)).map(([k, l]) => [k, { ...l, inContext: Math.min(l.inContext, lines[id][k] ?? 0) }]))
+        : linesOf(g)
+      return { ...g, inContext: Math.min(g.inContext, held[id]), lines: trimmed }
+    }),
+  }
 }
 
 /**
@@ -387,9 +437,18 @@ export function restarted(s: TokenState, now: number): TokenState {
   const fresh = emptyTokens(now)
   return {
     ...fresh,
-    groups: mapGroups(fresh, (g, id) => ({ ...g, inContext: s.groups[id].inContext })),
+    groups: mapGroups(fresh, (g, id) => ({
+      ...g,
+      inContext: s.groups[id].inContext,
+      lines: Object.fromEntries(
+        Object.entries(linesOf(s.groups[id]))
+          .filter(([, l]) => l.inContext > 0)
+          .map(([k, l]) => [k, { used: 0, inContext: l.inContext }]),
+      ),
+    })),
     standing: s.standing,
     schemas: s.schemas,
+    standingLines: s.standingLines ?? {},
     costBase: s.costUsd ?? s.costBase,
     costUsd: s.costUsd,
   }
@@ -409,6 +468,26 @@ export function capItems(items: Record<string, number>, max = MAX_ITEMS): Record
   return Object.fromEntries([...kept, [FOLDED, folded]])
 }
 
+/** A group's sub-items; empty in a tally kept from before they were counted. */
+export const linesOf = (g: GroupTally): Record<string, LineTally> => g.lines ?? {}
+
+function addLine(lines: Record<string, LineTally>, key: string, used: number, inContext: number): Record<string, LineTally> {
+  const l = lines[key] ?? { used: 0, inContext: 0 }
+  return { ...lines, [key]: { used: l.used + used, inContext: l.inContext + inContext } }
+}
+
+/** Keeps the `max` sub-items with the most used and held; the rest fold into one. */
+export function capLines(lines: Record<string, LineTally>, max = MAX_ITEMS): Record<string, LineTally> {
+  const entries = Object.entries(lines)
+  if (entries.length <= max) return lines
+  const weight = (l: LineTally) => l.used + l.inContext
+  const sorted = entries.filter(([k]) => k !== FOLDED).sort((a, b) => weight(b[1]) - weight(a[1]))
+  const folded = sorted
+    .slice(max - 1)
+    .reduce((n, [, l]) => ({ used: n.used + l.used, inContext: n.inContext + l.inContext }), lines[FOLDED] ?? { used: 0, inContext: 0 })
+  return Object.fromEntries([...sorted.slice(0, max - 1), [FOLDED, folded]])
+}
+
 export function addShares(s: TokenState, shares: readonly Share[]): TokenState {
   if (shares.length === 0) return s
   const groups = { ...s.groups }
@@ -420,6 +499,7 @@ export function addShares(s: TokenState, shares: readonly Share[]): TokenState {
       kinds: sh.tokens > 0 ? bump(g.kinds, sh.kind, sh.tokens) : g.kinds,
       items: sh.item && sh.tokens > 0 ? capItems(bump(g.items, sh.item, sh.tokens)) : g.items,
       calls: g.calls + (sh.calls ?? 0),
+      lines: sh.tokens > 0 ? capLines(addLine(linesOf(g), lineOf(sh), 0, sh.tokens)) : linesOf(g),
     }
   }
   return { ...s, groups }
@@ -427,7 +507,10 @@ export function addShares(s: TokenState, shares: readonly Share[]): TokenState {
 
 /** A compaction replaced the conversation with its summary: nothing the groups added is in the context any more. */
 export function compacted(s: TokenState): TokenState {
-  return { ...s, groups: mapGroups(s, g => ({ ...g, inContext: 0 })) }
+  return {
+    ...s,
+    groups: mapGroups(s, g => ({ ...g, inContext: 0, lines: Object.fromEntries(Object.entries(linesOf(g)).map(([k, l]) => [k, { ...l, inContext: 0 }])) })),
+  }
 }
 
 function mapGroups(s: TokenState, fn: (g: GroupTally, id: GroupId) => GroupTally): Record<GroupId, GroupTally> {
@@ -437,6 +520,17 @@ function mapGroups(s: TokenState, fn: (g: GroupTally, id: GroupId) => GroupTally
 /** What each group held in the context, plus what it adds to every request, when a request went out. */
 export function contextWeights(s: TokenState): Record<GroupId, number> {
   return Object.fromEntries(GROUP_IDS.map(id => [id, s.groups[id].inContext + (s.standing[id] ?? 0)])) as Record<GroupId, number>
+}
+
+/** The same by sub-item: what each held, plus what it adds to every request (the system prompt, a server's schemas). */
+export function lineWeights(s: TokenState): Record<GroupId, Record<string, number>> {
+  return Object.fromEntries(
+    GROUP_IDS.map(id => {
+      const w: Record<string, number> = Object.fromEntries(Object.entries(linesOf(s.groups[id])).map(([k, l]) => [k, l.inContext]))
+      for (const [k, v] of Object.entries(s.standingLines?.[id] ?? {})) w[k] = (w[k] ?? 0) + v
+      return [id, w]
+    }),
+  ) as Record<GroupId, Record<string, number>>
 }
 
 export type Usage = {
@@ -462,31 +556,56 @@ export function addApi(t: ApiTally, u: Usage): ApiTally {
 export type StepOutput = { answer: string; toolUses: readonly { name: string; input: unknown }[] }
 
 /**
- * Splits one main-thread request's real tokens across the groups. Input: by `weights`, what each group held
- * when the request went out; whatever the request carried beyond them (the system prompt and tool schemas,
- * before the context breakdown names them) goes to System. Output: the reply text to Chat, each tool call's
- * arguments to its group, and the rest, the thinking, to Thinking.
+ * Splits one main-thread request's real tokens across the groups, and within each group across its
+ * sub-items. Input: by `weights`, what each group held when the request went out, and by `lines`, what
+ * each sub-item held; whatever the request carried beyond them (the system prompt and tool schemas,
+ * before the context breakdown names them) goes to System, split as its standing sub-items are. Output:
+ * the reply text to Chat, each tool call's arguments to its group, and the rest, the thinking, to Thinking.
  */
-export function attributeRequest(s: TokenState, weights: Record<GroupId, number>, u: Usage, out: StepOutput): TokenState {
+export function attributeRequest(
+  s: TokenState,
+  weights: Record<GroupId, number>,
+  u: Usage,
+  out: StepOutput,
+  lines: Record<GroupId, Record<string, number>> = lineWeights(s),
+): TokenState {
+  const usedBy = Object.fromEntries(GROUP_IDS.map(id => [id, {}])) as Record<GroupId, Record<string, number>>
+  const add = (id: GroupId, key: string, n: number) => {
+    if (n > 0) usedBy[id][key] = (usedBy[id][key] ?? 0) + n
+  }
+  /** `n` over the sub-items by weight; with none weighted, under `fallback`. */
+  const spread = (id: GroupId, n: number, by: Record<string, number> | undefined, fallback: string) => {
+    const total = Object.values(by ?? {}).reduce((a, v) => a + v, 0)
+    if (total <= 0) return add(id, fallback, n)
+    for (const [k, v] of Object.entries(by ?? {})) add(id, k, (n * v) / total)
+  }
+
   const input = inputOf(u)
   const known = GROUP_IDS.reduce((n, id) => n + weights[id], 0)
   const scale = known > input ? input / known : 1
-  const used: Record<string, number> = Object.fromEntries(GROUP_IDS.map(id => [id, weights[id] * scale]))
-  used.system = (used.system ?? 0) + Math.max(0, input - known)
+  for (const id of GROUP_IDS) spread(id, weights[id] * scale, lines[id], UNATTRIBUTED)
+  spread('system', Math.max(0, input - known), s.standingLines?.system, SYSTEM_EXTRA)
 
-  const written: { group: GroupId; tokens: number }[] = [
-    { group: 'chat', tokens: estimate(out.answer.length) },
-    ...out.toolUses.map(t => ({ group: attribute(t.name, t.input).group, tokens: estimate(t.name.length + (JSON.stringify(t.input ?? {})?.length ?? 0)) })),
+  const written: { group: GroupId; line: string; tokens: number }[] = [
+    { group: 'chat', line: 'Claude', tokens: estimate(out.answer.length) },
+    ...out.toolUses.map(t => {
+      const at = attribute(t.name, t.input)
+      return { group: at.group, line: lineOf(at), tokens: estimate(t.name.length + (JSON.stringify(t.input ?? {})?.length ?? 0)) }
+    }),
   ]
   const writtenSum = written.reduce((n, w) => n + w.tokens, 0)
   const outScale = writtenSum > u.output_tokens ? u.output_tokens / writtenSum : 1
-  for (const w of written) used[w.group] = (used[w.group] ?? 0) + w.tokens * outScale
-  used.thinking = (used.thinking ?? 0) + Math.max(0, u.output_tokens - writtenSum)
+  for (const w of written) add(w.group, w.line, w.tokens * outScale)
+  add('thinking', 'reasoning', Math.max(0, u.output_tokens - writtenSum))
 
   return {
     ...s,
     main: addApi(s.main, u),
-    groups: mapGroups(s, (g, id) => ({ ...g, used: g.used + (used[id] ?? 0) })),
+    groups: mapGroups(s, (g, id) => {
+      let next = linesOf(g)
+      for (const [k, n] of Object.entries(usedBy[id])) next = addLine(next, k, n, 0)
+      return { ...g, used: g.used + Object.values(usedBy[id]).reduce((a, n) => a + n, 0), lines: capLines(next) }
+    }),
   }
 }
 
@@ -497,7 +616,7 @@ export function attributeAgent(s: TokenState, u: Usage, agentType: string): Toke
   return {
     ...s,
     agents: addApi(s.agents, u),
-    groups: { ...s.groups, agents: { ...g, used: g.used + total, spent: capItems(bump(g.spent, agentType, total)) } },
+    groups: { ...s.groups, agents: { ...g, used: g.used + total, spent: capItems(bump(g.spent, agentType, total)), lines: capLines(addLine(linesOf(g), agentType, total, 0)) } },
   }
 }
 
@@ -508,11 +627,15 @@ export function attributeAgent(s: TokenState, u: Usage, agentType: string): Toke
 export function attributePlugin(s: TokenState, u: Usage, plugin: string): TokenState {
   const total = inputOf(u) + u.output_tokens
   const id: GroupId = plugin === 'engine' ? 'system' : 'skills'
+  const who = plugin === 'engine' ? 'Claude Code' : plugin
   const g = s.groups[id]
   return {
     ...s,
     plugins: addApi(s.plugins, u),
-    groups: { ...s.groups, [id]: { ...g, used: g.used + total, spent: capItems(bump(g.spent, plugin === 'engine' ? 'Claude Code' : plugin, total)), calls: g.calls + 1 } },
+    groups: {
+      ...s.groups,
+      [id]: { ...g, used: g.used + total, spent: capItems(bump(g.spent, who, total)), calls: g.calls + 1, lines: capLines(addLine(linesOf(g), who, total, 0)) },
+    },
   }
 }
 
@@ -540,6 +663,21 @@ export function standingFrom(b: Breakdown): Partial<Record<GroupId, number>> {
   const used = b.categories.filter(c => c.kind === 'used' && !/message/i.test(c.name)).reduce((n, c) => n + c.tokens, 0)
   const system = Math.max(0, used - mcp - skills - agents)
   return { system, mcp, skills, agents }
+}
+
+/**
+ * The same by sub-item: System by the breakdown's own rows (the system prompt, the built-in tools, memory
+ * files), MCP by server, and the skill and command listings and custom agents' descriptions.
+ */
+export function standingLinesFrom(b: Breakdown): Partial<Record<GroupId, Record<string, number>>> {
+  const kept = (r: Record<string, number>) => Object.fromEntries(Object.entries(r).filter(([, v]) => v > 0))
+  const by: Partial<Record<GroupId, Record<string, number>>> = {
+    system: kept(Object.fromEntries(b.categories.filter(c => c.kind === 'used' && !/message|mcp|skill|command|agent/i.test(c.name)).map(c => [c.name, c.tokens]))),
+    mcp: mcpSchemas(b),
+    skills: kept({ 'skill listing': b.skills?.tokens ?? 0, 'command listing': b.slashCommands?.tokens ?? 0 }),
+    agents: kept({ 'agent descriptions': b.agents.reduce((n, a) => n + a.tokens, 0) }),
+  }
+  return Object.fromEntries(Object.entries(by).filter(([, r]) => Object.keys(r).length > 0))
 }
 
 /** MCP schema tokens per server, loaded ones only. */

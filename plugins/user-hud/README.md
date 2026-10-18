@@ -77,7 +77,16 @@ The pickers are part of the band's grid: click an option to pick it, or move to 
 
 ## Tokens
 
-The **TOKENS** row is one stacked bar of where this session's tokens went, with the total and the two largest groups. **Details** (`t`), or `/tokens`, opens the Tokens pane, a grid of cells like the band (**Refresh** `r`, **Reset** `x`): the API's own totals (cache read, cache write, new input, output, and the cost where Claude Code keeps one), then each group with its share, what it used, what it holds in the context now, its calls, and what it was made of.
+The **TOKENS** row is one stacked bar of where this session's tokens went, with the total and the two largest groups. **Details** (`t`), or `/tokens`, opens the Tokens pane, a grid of cells like the band (**Refresh** `r`, **Reset** `x`): the API's own totals (cache read, cache write, new input, output, and the cost where Claude Code keeps one), then each group with its share, what it used, what it holds in the context now, and its calls. Press a group (▸) to open it (▾): its sub-items, most used first, each with the tokens it used, its share of the group, and what it holds in the context now.
+
+```
+▾ ■ Skills & plugins    6% █░░░░░░░░░░░ 1.2M used · 9k in context · 14 calls
+    user-hud                   412k   34%
+    ask                        310k   26%
+    pstack:poteto-mode         180k   15%   6k in context
+```
+
+A sub-item's tokens are counted the way its group's are: each request's input is split by what each sub-item held when it went out, so the sub-items add up to the group. Files are listed by file, Shell by command, Web by site, MCP by server (its schemas included), Skills & plugins by skill, command, hook or plugin (a plugin's own model calls under its name), Subagents by type, Chat by who wrote it, and System & memory by the context breakdown's rows (the system prompt, the built-in tools, memory files) and reminders. Past 24 in a group, the smallest fold into `other`; what a group held before counting began is `unattributed`.
 
 | Group | What lands there |
 | --- | --- |
