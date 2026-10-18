@@ -110,8 +110,6 @@ import {
   emptyTokens,
   groupOf,
   mcpSchemas,
-  pct,
-  ranked,
   restarted,
   stack,
   standingFrom,
@@ -148,7 +146,7 @@ const EMPTY_NEXT: NextState = { items: [], isThinking: false, error: null }
 const cacheA = atom({ plugin: 'user-hud', key: 'cache' } as const, EMPTY_CACHE)
 const ttlA = atom({ plugin: 'user-hud', key: 'ttl' } as const, { ttl: '1h', source: 'default' } as TtlInfo)
 const handoffA = atom({ plugin: 'user-hud', key: 'handoff' } as const, EMPTY_HANDOFF)
-const hudA = atom({ plugin: 'user-hud', key: 'hud' } as const, { isOpen: false, model: null, effort: null, ultracode: false, overage: null } as HudState)
+const hudA = atom({ plugin: 'user-hud', key: 'hud' } as const, { isOpen: false, model: null, effort: null, ultracode: false, overage: null, contextPercent: null } as HudState)
 const tokensA = atom({ plugin: 'user-hud', key: 'tokens' } as const, emptyTokens(null))
 const nextA = atom({ plugin: 'user-hud', key: 'next' } as const, EMPTY_NEXT)
 
@@ -804,6 +802,8 @@ export const register: Register = (on, given) => {
       // A reload keeps the tally (it is the session's); a fresh session starts it.
       const now = await $.clock.now()
       await update($, tokensA, s => (s.since === null ? { ...s, since: now } : s))
+      const usage = await $.session.usage().catch(() => null)
+      await update($, hudA, s => ({ ...s, contextPercent: usage?.context.percent ?? null }))
       // A resumed conversation, or a reload mid-chat: what is already in the context.
       await measureContext($, 'replace').catch(() => {})
       await refreshStanding($, true).catch(() => {})
@@ -918,6 +918,7 @@ export const register: Register = (on, given) => {
     if (cfg.modules.cache && e.changed.includes('rateLimits')) await trackOverage($, e.rateLimits).catch(() => {})
     const cost = e.cost
     if (cfg.modules.tokens && e.changed.includes('cost') && cost) await update($, tokensA, s => ({ ...s, costUsd: cost.usd })).catch(() => {})
+    if (cfg.modules.tokens && e.changed.includes('context')) await update($, hudA, s => ({ ...s, contextPercent: e.context.percent ?? null })).catch(() => {})
     return next(e)
   })
 
@@ -1031,12 +1032,9 @@ export const register: Register = (on, given) => {
         ? {
             segments: used > 0 ? stack(tokens, TOKEN_BAR_CELLS).map(sg => ({ color: groupOf(sg.id).color, cells: sg.cells })) : [],
             total: fmtTokens(Math.round(used)),
-            leaders: ranked(tokens)
-              .filter(g => g.used > 0)
-              .slice(0, 2)
-              .map(g => `${groupOf(g.id).label} ${pct(g.share)}`),
           }
         : null,
+      context: mods.tokens ? (hud.contextPercent ?? null) : null,
       cache: mods.cache ? cacheRuns(c, t.ttl, lv, rem) : null,
       settings: settingsView(c),
       next: mods.next ? { items: nx.items, note: nx.isThinking ? 'thinking of next steps…' : nx.error } : null,
