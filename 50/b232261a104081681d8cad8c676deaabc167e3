@@ -1,0 +1,30 @@
+plugins/user-hud/tests/panelgrid.test.ts
+  s_c51b76df9000e0::t_7282bd69b2d5ff 28-29,43,48-49,64,66-69,120
+plugins/user-hud/types/index.d.ts
+  s_c51b76df9000e0::t_7282bd69b2d5ff 62-63
+plugins/user-hud/hooks/register.tsx
+  s_c51b76df9000e0::t_7282bd69b2d5ff 153,816-817,934,1050
+plugins/user-hud/README.md
+  s_c51b76df9000e0::t_7282bd69b2d5ff 30,42
+  s_c51b76df9000e0::t_6a110fd714ac5b 80
+plugins/user-hud/tests/register.test.tsx
+  s_c51b76df9000e0::t_7282bd69b2d5ff 1063-1066,1069
+plugins/user-hud/hooks/panelgrid.ts
+  s_c51b76df9000e0::t_7282bd69b2d5ff 34-37,66,74-76,84,90,102,107-108,150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "50b232261a104081681d8cad8c676deaabc167e3",
+  "prompts": {},
+  "sessions": {
+    "s_c51b76df9000e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f465c35d-8263-4479-b0e3-0cb3483ca584",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "clementhung <clement.hung@foodpanda.com>"
+    }
+  }
+}
