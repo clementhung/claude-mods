@@ -59,6 +59,8 @@ export type HudState = {
   ultracode: boolean
   /** The plan window past its limit while the subscription is on overage; null otherwise. */
   overage: PlanLimit | null
+  /** How full the context window is, a whole percentage, as the engine reports it; null before a response of the live window. */
+  contextPercent: number | null
 }
 
 /** Where tokens go, one bucket per kind of work. */

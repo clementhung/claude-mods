@@ -1060,9 +1060,13 @@ test('the TOKENS row shows the split and opens the Tokens pane; /clear starts th
     expect(segments.length).toBeGreaterThan(3)
     expect(segments.reduce((n, r) => n + r.text.length, 0)).toBe(16)
     expect(segments.map(r => r.bg)).toContain('#3987e5')
-    expect(await shows(band, /· System & memory \d+%/)).toBe(true)
+    // The context window's fill, as the engine reports it after a response; the closed row shows it too.
+    await $.session.measure({ context: { window: 200_000, tokens: 68_000, percent: 34 }, rateLimits: [], changed: ['context'] })
+    expect(await shows(band, '77k · context 34%')).toBe(true)
+    expect(await shows(band, /System & memory \d+%/)).toBe(false)
     await act(band, 'tokens')
     await act(band, 'panel')
+    expect(await shows(band, 'context 34%')).toBe(true)
     await band.unmount()
 
     const pane = await $.ui.mount({ plugin: 'user-hud', surface, component: 'Pane', requestId: 'tokens', props: { ...PANE_PROPS, title: 'Tokens' } })

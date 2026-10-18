@@ -25,7 +25,8 @@ const VIEW: BandView = {
       { kind: 'effort', name: 'EFFORT', options: EFFORT_STEPS.map(f => ({ id: f.step, label: f.label, colors: [...EFFORT_COLORS[f.step]], isOn: f.step === 'xhigh' })) },
     ],
   },
-  tokens: { segments: [{ color: '#3987e5', cells: 10 }, { color: '#d95926', cells: 6 }], total: '1.2M', leaders: ['Files 62%', 'Chat 38%'] },
+  tokens: { segments: [{ color: '#3987e5', cells: 10 }, { color: '#d95926', cells: 6 }], total: '1.2M' },
+  context: 34,
   cache: runs('◆ cache 52:10 ▰▰▰▰▰▰▰▰▱▱ 182k cached · hit 94% · 1h'),
   settings: [
     { key: 'sound', label: 'Alert sound', desc: 'Glass at the warning', kind: 'toggle', isOn: true, value: '' },
@@ -39,11 +40,13 @@ test('the open panel: every row as wide as the panel, the tab against its right 
   const g = bandGrid(VIEW)
   for (const l of plain(g)) expect(l.length).toBe(72)
   expect(plain(g).at(-1)).toMatch(/ ◆ user-hud ▾ $/)
-  expect(plain(g)).toContainEqual(expect.stringMatching(/^TOKENS {2} {16} 1\.2M · Files 62% · Chat 38% +t: Details$/))
+  expect(plain(g)).toContainEqual(expect.stringMatching(/^TOKENS {2} {16} 1\.2M · context 34% +t: Details$/))
   expect(plain(g)).toContainEqual(expect.stringMatching(/^● Alert sound +Glass at the warning +● On $/))
   expect(plain(g)).toContainEqual(expect.stringMatching(/^✦ h: Write handoff   ◆ r: Read handoff   newest · 2h ago +$/))
   expect(textOf(g, 'set:warnSeconds')).toBe(' 2:00 ')
   expect(textOf(g, 'keepwarm')).toBe(' w: Keep warm ')
+  // Quiet, on its grey ground, its label still in the plain text colour: dimmed it would vanish into the grey.
+  expect(g.rows.flat().find(r => r.text === ' w: Keep warm ')).toMatchObject({ bg: 'subtle', isDim: false })
   expect(g.keys).toEqual({ h: 'handoff', t: 'tokens', r: 'readhandoff', w: 'keepwarm' })
 })
 
@@ -58,10 +61,12 @@ test('short of rows the dividers go first, then the settings fold onto one line'
   expect(compact.hits.map(h => h.id)).toContain('set:sound')
 })
 
-test('the closed row: the cache, tokens, model and effort beside the tab; the least needed go first when narrow', () => {
+test('the closed row: the cache, context, tokens, model and effort beside the tab; the least needed go first when narrow', () => {
   const closed = { ...VIEW, isOpen: false }
-  expect(plain(bandGrid(closed))).toEqual(['◆ 52:10  1.2M tokens  Opus 5.5 · XHigh   ◆ user-hud ▴ '])
-  expect(plain(bandGrid({ ...closed, maxWidth: 45 }))).toEqual(['◆ 52:10  Opus 5.5 · XHigh   ◆ user-hud ▴ '])
+  expect(plain(bandGrid(closed))).toEqual(['◆ 52:10  context 34%  1.2M tokens  Opus 5.5 · XHigh   ◆ user-hud ▴ '])
+  expect(plain(bandGrid({ ...closed, maxWidth: 56 }))).toEqual(['◆ 52:10  context 34%  Opus 5.5 · XHigh   ◆ user-hud ▴ '])
+  expect(plain(bandGrid({ ...closed, maxWidth: 45 }))).toEqual(['◆ 52:10  context 34%   ◆ user-hud ▴ '])
+  expect(plain(bandGrid({ ...closed, context: null, maxWidth: 45 }))).toEqual(['◆ 52:10  Opus 5.5 · XHigh   ◆ user-hud ▴ '])
   expect(plain(bandGrid({ ...closed, maxWidth: 20 }))).toEqual([' ◆ user-hud ▴ '])
   // Cooling, Keep warm comes out beside the tab, with its hotkey.
   const cooling = bandGrid({ ...closed, keepWarm: 'urged' })
@@ -112,6 +117,6 @@ test('next steps: numbered rows under their divider, 1 to 3 as hotkeys; folded i
   expect(plain(bandGrid({ ...VIEW, next: { items: [], note: 'thinking of next steps…' } }))).toContainEqual(expect.stringMatching(/^✦ thinking of next steps… +$/))
   expect(bandGrid({ ...VIEW, next: { items: [], note: null } }).rows.length).toBe(bandGrid(VIEW).rows.length)
   const closed = bandGrid({ ...VIEW, isOpen: false, next: { items, note: null } })
-  expect(plain(closed)).toEqual(['◆ 52:10  1.2M tokens  Opus 5.5 · XHigh  ✦ 2 next   ◆ user-hud ▴ '])
+  expect(plain(closed)).toEqual(['◆ 52:10  context 34%  1.2M tokens  Opus 5.5 · XHigh  ✦ 2 next   ◆ user-hud ▴ '])
   expect(textOf(closed, 'panel')).toBe('✦ 2 next')
 })

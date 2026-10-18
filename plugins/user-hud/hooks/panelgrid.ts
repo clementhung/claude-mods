@@ -31,8 +31,10 @@ export type BandView = {
   isPinging: boolean
   /** Each part of the panel, null where its module is off: the panel leaves it out. */
   pickers: PickerProps | null
-  /** The tokens row: the stacked bar's runs of cells, the total, the two largest groups. */
-  tokens: { segments: { color: string; cells: number }[]; total: string; leaders: string[] } | null
+  /** The tokens row: the stacked bar's runs of cells and the total. */
+  tokens: { segments: { color: string; cells: number }[]; total: string } | null
+  /** How full the context window is, a whole percentage; null before a response reported it, or with tokens off. */
+  context: number | null
   /** The cache line, left of Keep warm. */
   cache: Run[] | null
   settings: Setting[]
@@ -61,7 +63,7 @@ const text = (s: string, look = {}): Piece => piece(s, look)
 const tab = (isOpen: boolean): Piece => piece(` ◆ user-hud ${isOpen ? '▾' : '▴'} `, { bg: 'claude', isBold: true }, 'panel')
 
 const keepWarm = (v: BandView): Piece | null =>
-  v.keepWarm === 'none' ? null : pill('w: Keep warm', 'keepwarm', v.keepWarm === 'urged' ? 'warning' : 'subtle', v.keepWarm === 'quiet')
+  v.keepWarm === 'none' ? null : pill('w: Keep warm', 'keepwarm', v.keepWarm === 'urged' ? 'warning' : 'subtle')
 
 /** `✦ 3 next`: next steps are waiting; it opens the panel where they are. */
 function nextChip(v: BandView): Piece | null {
@@ -69,7 +71,9 @@ function nextChip(v: BandView): Piece | null {
   return n > 0 ? piece(`✦ ${n} next`, { color: 'claude' }, 'panel') : null
 }
 
-/** The closed row: the cache, overage, tokens, model and effort beside the tab; the least needed go first when narrow. */
+const contextText = (percent: number) => `context ${percent}%`
+
+/** The closed row: the cache, overage, context, tokens, model and effort beside the tab; the least needed go first when narrow. */
 function closedRow(v: BandView): Band {
   const kw = v.keepWarm === 'urged' && !v.isPinging ? keepWarm(v) : null
   // Lowest priority first: what goes when the row is too wide.
@@ -77,12 +81,13 @@ function closedRow(v: BandView): Band {
     v.usedTokens ? text(v.usedTokens, { isDim: true }) : null,
     v.setup.length > 0 ? { runs: v.setup, action: null } : null,
     nextChip(v),
+    v.context !== null ? text(contextText(v.context)) : null,
     v.overage ? pill('New chat', 'newchat', 'subtle') : null,
     v.overage ? text('⚠ overage', { color: 'warning' }) : null,
     v.chip.length > 0 ? { runs: v.chip, action: null } : null,
   ]
   const order = (kept: (Piece | null)[]) =>
-    [kept[5], kept[4], kept[3], kept[0], kept[1], kept[2], kw, tab(false)].filter((p): p is Piece => p !== null)
+    [kept[6], kept[5], kept[4], kept[3], kept[0], kept[1], kept[2], kw, tab(false)].filter((p): p is Piece => p !== null)
   const widthOfRow = (ps: Piece[]) => ps.reduce((n, p) => n + widthOf(p.runs), 0) + 2 * Math.max(0, ps.length - 1)
   const kept = [...optional]
   for (let i = 0; i < kept.length && widthOfRow(order(kept)) > v.maxWidth; i += 1) kept[i] = null
@@ -94,12 +99,13 @@ function closedRow(v: BandView): Band {
   return { ...b.grid, keys: kw ? { w: 'keepwarm' } : {}, width }
 }
 
-function tokensRow(tokens: NonNullable<BandView['tokens']>, width: number): ReturnType<typeof line> {
+function tokensRow(tokens: NonNullable<BandView['tokens']>, context: number | null, width: number): ReturnType<typeof line> {
   const head: Run[] = runs(pad('TOKENS', NAME_WIDTH), { isDim: true })
   if (tokens.segments.length === 0) put(head, 'counting from the next request', { isDim: true })
   else for (const s of tokens.segments) put(head, ' '.repeat(s.cells), { bg: s.color })
   const left: Piece[] = [{ runs: head, action: null }]
-  if (tokens.segments.length > 0) left.push(text(tokens.total), ...tokens.leaders.map(l => text(`· ${l}`, { isDim: true })))
+  if (tokens.segments.length > 0) left.push(text(tokens.total))
+  if (context !== null) left.push(text(`· ${contextText(context)}`))
   return line(width, left, [keyed('t', 'Details', 'tokens')])
 }
 
@@ -141,7 +147,7 @@ function openPanel(v: BandView, fit: Fit): Band {
   const rule = (title: string) => b.add(runs(sectionRule(title, W), { isDim: true }))
   if (v.pickers) b.append(layout(v.pickers))
   if (v.tokens) {
-    const t = tokensRow(v.tokens, W)
+    const t = tokensRow(v.tokens, v.context, W)
     b.add(t.row, t.spans)
   }
   if (v.cache) {
