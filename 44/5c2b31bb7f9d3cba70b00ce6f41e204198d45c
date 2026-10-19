@@ -1,0 +1,26 @@
+plugins/code-reference/tests/register.test.tsx
+  s_c51b76df9000e0::t_975c5e021a45ef 9-17,176-177,198
+plugins/code-reference/hooks/draw.tsx
+  s_c51b76df9000e0::t_c3c79d368c440c 2-4,48,152
+  s_c51b76df9000e0::t_1ae121ed54bd0d 153
+plugins/code-reference/.claude-plugin/plugin.json
+  s_c51b76df9000e0::t_1ae121ed54bd0d 3
+plugins/code-reference/README.md
+  s_c51b76df9000e0::t_4134e88cc680cf 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "445c2b31bb7f9d3cba70b00ce6f41e204198d45c",
+  "prompts": {},
+  "sessions": {
+    "s_c51b76df9000e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f465c35d-8263-4479-b0e3-0cb3483ca584",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "clementhung <clement.hung@foodpanda.com>"
+    }
+  }
+}
