@@ -2,21 +2,29 @@
 // explanation of code on disk, or a review of a pull request. Only the command
 // asks: no words in a prompt do. No `$` here.
 
-/** How every code-reference reply links its prose to the code. */
-const LINKS = [
-  '- Link every place in the code you talk about, on the words that describe it: `[the retry loop](src/worker/retry.ts:40-62)`.',
-  '  The target is the path relative to the repository root, then `:line` or `:start-end` in the file as it is now. Link the lines that matter, not whole files.',
-  '- Name places in the order the reader should look at them. Never put a link inside a code block.',
-  '- No severity tags, no numbered findings, no tables of files: plain prose the reader can follow, each place one click away.',
-].join('\n')
+/** How a code-reference reply links its prose to the code, each target written as `target` says. */
+const links = (example: string, target: string) =>
+  [
+    `- Link every place in the code you talk about, on the words that describe it: \`[the retry loop](${example}:40-62)\`.`,
+    `  The target is ${target}, then \`:line\` or \`:start-end\` in the file as it is now. Link the lines that matter, not whole files.`,
+    '- Full paths go only in link targets, never in the prose. Never name a place as backticked `file:line` outside a link.',
+    '- Name places in the order the reader should look at them. Never put a link inside a code block.',
+    '- No severity tags, no numbered findings, no tables of files: plain prose the reader can follow, each place one click away.',
+  ].join('\n')
+
+/** An explanation's targets: absolute, so each resolves whatever folder the session started in. */
+const ABSOLUTE = 'the ABSOLUTE path of the file, never a relative path or a bare file name'
+
+/** The header line of an explanation: the repository the code is in, which need not be the session's folder. */
+const explainHeader = (root: string) => `**Code reference:** <absolute root of the repository or worktree that holds the code: ${root} when the code is there>`
 
 /** The format of an explanation: prose in sections, every place it names linked. */
 export function explainContext(root: string): string {
   return [
     'code-reference: answer in the code-reference format, so each place in the code you mention opens beside the reply.',
-    `- First line, exactly: \`**Code reference:** ${root}\` (the repository root, absolute).`,
+    `- First line, exactly: \`${explainHeader(root)}\`.`,
     '- Then plain markdown. When the answer has more than one part, give each a `##` heading that says what it covers; one or two short paragraphs each.',
-    LINKS,
+    links(`${root}/src/worker/retry.ts`, ABSOLUTE),
   ].join('\n')
 }
 
@@ -34,7 +42,8 @@ export function reviewContext(url: string, worktree?: string): string {
     '- Then one or two sentences on what the PR does.',
     '- Then one `##` section per issue, most important first, the heading saying what is wrong in plain words. In it: what the code does, what goes wrong and for whom, and the fix; a ```diff block of at most 8 lines when it helps.',
     '- With nothing to fix: the verdict sentence and a short list of what you checked.',
-    LINKS,
+    // Relative to the PR's repository: the one path both the review worktree and GitHub can serve.
+    links('src/worker/retry.ts', 'the path relative to the repository root'),
   ].join('\n')
 }
 
@@ -44,7 +53,7 @@ export function reviewContext(url: string, worktree?: string): string {
  * plugin's own prompt carries no hidden context.
  */
 export function rewritePrompt(root: string): string {
-  return `Say your last reply again in the code-reference format: first line **Code reference:** ${root}, then the same content, as briefly, with every place in the code linked on the words that describe it, like [the retry loop](src/worker/retry.ts:40-62). Read files first where you need the line numbers.`
+  return `Say your last reply again in the code-reference format: first line ${explainHeader(root)}, then the same content, as briefly, with every place in the code linked on the words that describe it, like [the retry loop](${root}/src/worker/retry.ts:40-62). The target is ${ABSOLUTE}; full paths go only in link targets, never in the prose. Read files first where you need the line numbers.`
 }
 
 /** What `/code-reference review` asks to have reviewed: a PR by link or number, or the current branch's. */

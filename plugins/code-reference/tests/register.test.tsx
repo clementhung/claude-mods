@@ -6,6 +6,15 @@ import { textKey } from '../hooks/code.ts'
 import { parseDoc } from '../hooks/doc.ts'
 import { replyRows } from '../hooks/layout.ts'
 
+/** The text of every Text in a drawn tree that is not in the monospaced face. */
+function textsNotMono(node: unknown): string[] {
+  if (Array.isArray(node)) return node.flatMap(textsNotMono)
+  if (!node || typeof node !== 'object') return []
+  const n = node as { type?: unknown; props?: { mono?: unknown }; children?: unknown }
+  const own = n.type === 'Text' && n.props?.mono !== true ? [JSON.stringify(n.children).slice(0, 40)] : []
+  return [...own, ...textsNotMono(n.children)]
+}
+
 const SURFACES = ['terminal', 'desktop'] as const
 const VIEW = { columns: 88, rows: 50, isFullscreen: true }
 const PANE_PROPS = { title: 'Code reference', isFocused: false, bodyColumns: 66, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 30 }, view: {} }
@@ -13,6 +22,9 @@ const PR_URL = 'https://github.com/acme/billing/pull/12'
 const SHA = 'abc1234def5678'
 const HOME = '/home/p'
 const WT = `${HOME}/.cache/code-reference/review/acme-billing-12-abc1234`
+
+/** A file in a worktree a few folders under the session's, as a repository of repositories holds one. */
+const NESTED = '/work/backend/wt-709-review/lambda/internal/fono_vat.go'
 
 const FILE = Array.from({ length: 900 }, (_, i) => `line ${i + 1}`).join('\n')
 
@@ -52,7 +64,7 @@ type World = {
 /** The world beneath the plugin: files on disk, git, gh, an MCP server, and the UI calls. */
 function world(on: On, env: Record<string, string> = { TERM_PROGRAM: 'iTerm.app', HOME }, commands: string[] = []): World {
   const w: World = { contexts: [], submits: [], toasts: [], opens: [], argv: [], mcp: [], messages: [], hasGh: true, mcpTools: [], isOpen: false, clock: mock.clock(on, { now: Date.parse('2026-10-09T06:00:00Z') }) }
-  const files: Record<string, string> = { '/work/hooks/register.tsx': FILE, '/work/hooks/review.ts': FILE, [`${WT}/infra/iam.tf`]: Array.from({ length: 51 }, (_, i) => `l${i + 1}`).join('\n') }
+  const files: Record<string, string> = { [NESTED]: FILE, '/work/hooks/register.tsx': FILE, '/work/hooks/review.ts': FILE, [`${WT}/infra/iam.tf`]: Array.from({ length: 51 }, (_, i) => `l${i + 1}`).join('\n') }
   const existing = new Set<string>()
   mock.store(on, { setup: { isAsked: true } })
   mock.env(on, env)
@@ -164,6 +176,8 @@ test('a code-reference reply is one region drawing the same rows in the terminal
     await msg.unmount()
   }
   expect(drawn.terminal).toBe(drawn.desktop)
+  // Laid out cell by cell, so drawn in the monospaced face: in the desktop's own face the strip and the rules drift.
+  expect(textsNotMono(JSON.parse(drawn.desktop ?? 'null'))).toEqual([])
   // Another reply is left to the engine.
   const plain = await $.ui.mount({ plugin: 'code-reference', surface: 'terminal', component: 'AssistantMessage', props: { text: 'Plain words about [a file](hooks/a.ts:1).', isFirstOfReply: true }, viewport: VIEW })
   expect(await plain.find({ type: 'Client' })).toBe(undefined)
@@ -184,7 +198,30 @@ test("the pane shows the first place: one header line, then the file around it, 
     await pane.unmount()
   }
   expect(drawn.terminal).toBe(drawn.desktop)
+  expect(textsNotMono(JSON.parse(drawn.desktop ?? 'null'))).toEqual([])
   expect(w.argv.some(a => a.join(' ').startsWith('git -C /work diff --no-color --no-ext-diff -U100000 HEAD -- hooks/register.tsx'))).toBe(true)
+})
+
+test('the docked pane fills the rows it is given when the desktop lays its region out shorter', async ($, on) => {
+  const w = world(on)
+  await start($, w)
+  await answer($, w, REPLY)
+  const pane = await $.ui.mount({ plugin: 'code-reference', surface: 'desktop', component: 'Pane', requestId: 'code-reference', props: PANE_PROPS, viewport: VIEW })
+  // The height of what the region drew before: a header and one line.
+  await pane.resize({ columns: PANE_PROPS.bodyColumns, rows: 2, in: 'pane' })
+  for (const line of ['line 790', 'line 792', 'line 811', 'line 812']) expect(await pane.find({ type: 'Text', text: line, in: 'pane' })).toBeTruthy()
+})
+
+test('a place in another repository opens by its absolute path, wherever the session started', async ($, on) => {
+  const w = world(on)
+  await start($, w)
+  const reply = [`**Code reference:** ${NESTED.slice(0, NESTED.indexOf('/lambda'))}`, '', `The rows come from [the VAT row builder](${NESTED}:44-46); \`fono_vat.go:44\` alone names no file.`].join('\n')
+  await answer($, w, reply)
+  const pane = await $.ui.mount({ plugin: 'code-reference', surface: 'desktop', component: 'Pane', requestId: 'code-reference', props: PANE_PROPS, viewport: VIEW })
+  expect(await pane.find({ type: 'Text', text: 'fono_vat.go', in: 'pane' })).toBeTruthy()
+  expect(await pane.find({ type: 'Text', text: 'line 44', in: 'pane' })).toBeTruthy()
+  const msg = await $.ui.mount({ plugin: 'code-reference', surface: 'desktop', component: 'AssistantMessage', props: { text: reply, isFirstOfReply: true }, viewport: VIEW })
+  expect(await msg.find({ type: 'Text', text: '1 place in the code', in: 'reply' })).toBeTruthy()
 })
 
 test('a click on a box shows that place; d and a step through every place in order', async ($, on) => {
@@ -242,7 +279,7 @@ test('prompts: /code-reference <question> sends the question with the format; no
   await start($, w)
   await $.prompt.submit(TYPED('/code-reference how does the band work'))
   expect(w.submits.at(-1)).toBe('how does the band work')
-  expect(w.contexts.at(-1)?.join('\n')).toContain('`**Code reference:** /work`')
+  expect(w.contexts.at(-1)?.join('\n')).toContain('`**Code reference:** <absolute root of the repository or worktree that holds the code: /work when the code is there>`')
   // No trigger words: the command in passing, a review request and a bare PR link all pass untouched.
   for (const typed of ['explain how x works with y and use /code-reference', `review ${PR_URL}`, PR_URL, 'review pr 418', 'what is in this repo?']) {
     await $.prompt.submit(TYPED(typed))
@@ -268,7 +305,7 @@ test('/code-reference alone draws the last reply in place when it names files, e
   await $.command.run(RUN('code-reference'))
   await w.clock.settle()
   expect(w.submits.at(-1)).toContain('Say your last reply again in the code-reference format')
-  expect(w.submits.at(-1)).toContain('**Code reference:** /work')
+  expect(w.submits.at(-1)).toContain('/work when the code is there')
 })
 
 test('a review: the PR is checked out into a worktree and its code shows with the changes marked', async ($, on) => {

@@ -16,16 +16,23 @@ test('what /code-reference asks for: the last reply, a place, a review, or a que
 
 test('the format the model is handed: the header, sections, every place linked, no severity', () => {
   const ctx = explainContext('/work/repo')
-  expect(ctx).toContain('`**Code reference:** /work/repo`')
-  expect(ctx).toContain('`[the retry loop](src/worker/retry.ts:40-62)`')
+  expect(ctx).toContain('`**Code reference:** <absolute root of the repository or worktree that holds the code: /work/repo when the code is there>`')
+  expect(ctx).toContain('`[the retry loop](/work/repo/src/worker/retry.ts:40-62)`')
+  // Targets are absolute, so a place opens wherever the session started; the header names the repository that holds the code.
+  expect(ctx).toContain('the ABSOLUTE path of the file')
+  expect(ctx).toContain('the repository or worktree that holds the code')
   expect(ctx).toContain('No severity tags')
   const review = reviewContext('https://github.com/acme/billing/pull/12', '/home/p/.cache/code-reference/review/acme-billing-12-abc1234')
   expect(review).toContain('`**Code reference:** https://github.com/acme/billing/pull/12`')
   expect(review).toContain('whether it is ready to merge')
   expect(review).toContain('/home/p/.cache/code-reference/review/acme-billing-12-abc1234')
   expect(review).not.toMatch(/high|medium|\[1\]/)
+  // A review links within the PR's repository, which its worktree and GitHub both serve.
+  expect(review).toContain('`[the retry loop](src/worker/retry.ts:40-62)`')
   expect(reviewContext('https://github.com/acme/billing/pull/12')).not.toContain('checked out')
-  expect(rewritePrompt('/work/repo')).toContain('**Code reference:** /work/repo')
+  expect(rewritePrompt('/work/repo')).toContain('/work/repo')
+  expect(rewritePrompt('/work/repo')).toContain('the ABSOLUTE path of the file')
+  expect(rewritePrompt('/work/repo')).toContain('[the retry loop](/work/repo/src/worker/retry.ts:40-62)')
 })
 
 test('a review asked with the command: a PR link, review with a number, or review alone for this branch', () => {

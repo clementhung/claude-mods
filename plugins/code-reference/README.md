@@ -27,7 +27,7 @@ Only the command starts it. No words in a prompt do (not "review", not a PR link
 
 ## How a reply reads
 
-The model writes ordinary markdown: `##` sections, paragraphs, and links whose target is a place in the code, `[the retry loop](src/worker/retry.ts:40-62)`. There are no severity tags and no numbered findings. A PR review opens with one plain sentence saying whether it is ready to merge.
+The model writes ordinary markdown: `##` sections, paragraphs, and links whose target is a place in the code, `[the retry loop](/work/billing/src/worker/retry.ts:40-62)`. An explanation's targets are absolute paths, so each place opens whatever folder the session started in; a review's are relative to the PR's repository. A backticked name counts as a place only with a folder and lines, `src/worker/retry.ts:40`, never a bare `retry.ts:40`. There are no severity tags and no numbered findings. A PR review opens with one plain sentence saying whether it is ready to merge.
 
 - **Links** are underlined, followed by a small number. Numbers run 1 to N through the whole reply, in the order the text names the places.
 - **Under each section**, a rule ends the prose, then one row of boxes, one per place: the number in the top edge, the file and lines inside. The box of the place the pane shows is outlined in Claude's color.
@@ -57,7 +57,7 @@ Only when no copy is on disk (the checkout failed) does the code come from GitHu
 
 ## Why it looks the same everywhere
 
-The reply and the pane are each one `Client` region. The mod lays out every row itself at the width the app reports: it wraps the prose, draws the boxes and cuts the code lines. Then it draws rows of `Text`, which both apps draw in their code font on a grid of cells. It draws no `Markdown` and no `Button`, because the desktop app draws those natively. Clicks come back as the cell under the pointer and are matched to what was drawn. Colors are theme keys, so each app keeps its own light or dark theme.
+The reply and the pane are each one `Client` region. The mod lays out every row itself at the width the app reports: it wraps the prose, draws the boxes and cuts the code lines. Then it draws rows of `Text` in each app's monospaced face (`mono`), so both apps draw them on a grid of cells; the desktop app's own face is proportional, and there the strip of boxes and the rules would drift off their labels. It draws no `Markdown` and no `Button`, because the desktop app draws those natively. Clicks come back as the cell under the pointer and are matched to what was drawn. Colors are theme keys, so each app keeps its own light or dark theme.
 
 ## Setup
 

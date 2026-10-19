@@ -62,6 +62,7 @@ test('with no headings each paragraph or list is a section of its own; a reply n
   expect(doc?.places.map(p => p.n)).toEqual([1, 2, 3])
   expect(doc?.target).toBe('')
   expect(parseDoc('Just prose, `a.ts` and `ratio 3:2`.', ROOT)).toBe(null)
+  expect(parseDoc('The rows come from `fono_vat.go:44-46`.', ROOT)).toBe(null)
 })
 
 test('targets: ranges, #L anchors, whole files, absolute paths under the root', () => {
@@ -70,6 +71,9 @@ test('targets: ranges, #L anchors, whole files, absolute paths under the root', 
   expect(parseRef('src/a.ts#L5-L9', ROOT)).toEqual({ path: 'src/a.ts', line: 5, endLine: 9 })
   expect(parseRef('src/a.ts', ROOT)).toEqual({ path: 'src/a.ts', line: 0, endLine: 0 })
   expect(parseRef('src/a.ts', ROOT, true)).toBe(null)
+  // A backticked file name with no folder names no file: a session's folder can hold many.
+  expect(parseRef('fono_vat.go:44-46', ROOT, true)).toBe(null)
+  expect(parseRef('fono_vat.go:44-46', ROOT)).toEqual({ path: 'fono_vat.go', line: 44, endLine: 46 })
   expect(parseRef(`${ROOT}/src/a.ts:3`, ROOT)).toEqual({ path: 'src/a.ts', line: 3, endLine: 3 })
   expect(parseRef('/etc/hosts:3', ROOT)).toEqual({ path: '/etc/hosts', line: 3, endLine: 3 })
   expect(parseRef('https://github.com/a/b', ROOT)).toBe(null)
