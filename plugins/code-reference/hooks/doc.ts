@@ -43,7 +43,8 @@ const REF = /^(?:file:\/\/)?((?:[^\s:#()`]*[\w@+-])?[./][^\s:#()`]*[\w@+-])(?::(
 /**
  * A link target or a backticked name as a place: `src/a.ts:12-30`, `src/a.ts:12`,
  * `src/a.ts#L12-L30`, or a path alone (the whole file). An absolute path under
- * `root` is made relative to it. `needsLine` keeps a bare `a.ts` from counting.
+ * `root` is made relative to it. `needsLine` (a backticked name) counts only a
+ * path with a folder and lines: a bare `a.ts:3` could be any of many files.
  */
 export function parseRef(target: string, root: string, needsLine = false): CodeRef | null {
   if (/^[a-z][\w+.-]*:\/\//i.test(target) && !target.startsWith('file://')) return null
@@ -51,7 +52,7 @@ export function parseRef(target: string, root: string, needsLine = false): CodeR
   if (!m || !m[1]) return null
   const start = m[2] ?? m[4]
   const end = m[3] ?? m[5]
-  if (needsLine && !start) return null
+  if (needsLine && (!start || !m[1].includes('/'))) return null
   let path = decodeURIComponent(m[1]).replace(/^\.\//, '')
   const base = root.replace(/\/+$/, '')
   if (base && path.startsWith(`${base}/`)) path = path.slice(base.length + 1)

@@ -15,7 +15,9 @@ const Pane: ClientModule<PaneProps, Local> = (props, surface) => {
   const at = p ? `${p.n}:${p.path}:${p.line}` : ''
   const scroll = surface.state?.at === at ? surface.state.scroll : 0
   const w = surface.columns > 0 ? surface.columns : props.cols
-  const h = surface.rows > 0 ? surface.rows : props.rows
+  // The desktop can lay the region out at the height of what it last drew,
+  // short of the `height` it was given; drawing to that height would keep it there.
+  const h = Math.max(surface.rows, props.rows)
   const { rows, start, room } = paneRows(props, w, h, scroll)
   const post = (act: string) => surface.post({ act })
   const move = (d: number) => {
