@@ -1,5 +1,7 @@
 // Rows of spans as Text: one Text per row, cut at the edge, never wrapped by
-// the surface, so every surface shows the rows the mod laid out.
+// the surface, so every surface shows the rows the mod laid out. Every Text is
+// in the surface's monospaced face: the rows are laid out a cell to a
+// character, and the desktop's own face is proportional.
 //
 // A Client's tree is held to 100,000 characters serialized or the instance
 // unmounts, and each span drawn as its own Text costs its text plus about 50
@@ -43,7 +45,7 @@ const isPlain = (l: Look) => keyOf(l) === '||0000'
 
 // What the engine serializes, counted the way it writes it.
 const textCost = (t: string) => JSON.stringify(t).length + 1
-const elemCost = (props: Look & { wrap?: string }, inner: number) => JSON.stringify({ type: 'Text', props, children: [] }).length + inner + 1
+const elemCost = (props: Look & { wrap?: string }, inner: number) => JSON.stringify({ type: 'Text', props: { ...props, mono: true }, children: [] }).length + inner + 1
 const ROW_WRAP = 'truncate-end'
 
 const isBlank = (t: string) => /^\s*$/.test(t)
@@ -147,8 +149,8 @@ export function drawRows({ Box, Text }: Pick<ElementTable, 'Box' | 'Text'>, rows
   return (
     <Box flexDirection="column">
       {plan.rows.map(row => (
-        <Text wrap="truncate-end" {...row.look}>
-          {row.runs.map(r => (typeof r === 'string' ? r : <Text {...r.look}>{r.t}</Text>))}
+        <Text wrap="truncate-end" mono {...row.look}>
+          {row.runs.map(r => (typeof r === 'string' ? r : <Text mono {...r.look}>{r.t}</Text>))}
         </Text>
       ))}
     </Box>

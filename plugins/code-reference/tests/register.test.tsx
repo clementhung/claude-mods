@@ -6,6 +6,15 @@ import { textKey } from '../hooks/code.ts'
 import { parseDoc } from '../hooks/doc.ts'
 import { replyRows } from '../hooks/layout.ts'
 
+/** The text of every Text in a drawn tree that is not in the monospaced face. */
+function textsNotMono(node: unknown): string[] {
+  if (Array.isArray(node)) return node.flatMap(textsNotMono)
+  if (!node || typeof node !== 'object') return []
+  const n = node as { type?: unknown; props?: { mono?: unknown }; children?: unknown }
+  const own = n.type === 'Text' && n.props?.mono !== true ? [JSON.stringify(n.children).slice(0, 40)] : []
+  return [...own, ...textsNotMono(n.children)]
+}
+
 const SURFACES = ['terminal', 'desktop'] as const
 const VIEW = { columns: 88, rows: 50, isFullscreen: true }
 const PANE_PROPS = { title: 'Code reference', isFocused: false, bodyColumns: 66, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 30 }, view: {} }
@@ -164,6 +173,8 @@ test('a code-reference reply is one region drawing the same rows in the terminal
     await msg.unmount()
   }
   expect(drawn.terminal).toBe(drawn.desktop)
+  // Laid out cell by cell, so drawn in the monospaced face: in the desktop's own face the strip and the rules drift.
+  expect(textsNotMono(JSON.parse(drawn.desktop ?? 'null'))).toEqual([])
   // Another reply is left to the engine.
   const plain = await $.ui.mount({ plugin: 'code-reference', surface: 'terminal', component: 'AssistantMessage', props: { text: 'Plain words about [a file](hooks/a.ts:1).', isFirstOfReply: true }, viewport: VIEW })
   expect(await plain.find({ type: 'Client' })).toBe(undefined)
@@ -184,6 +195,7 @@ test("the pane shows the first place: one header line, then the file around it, 
     await pane.unmount()
   }
   expect(drawn.terminal).toBe(drawn.desktop)
+  expect(textsNotMono(JSON.parse(drawn.desktop ?? 'null'))).toEqual([])
   expect(w.argv.some(a => a.join(' ').startsWith('git -C /work diff --no-color --no-ext-diff -U100000 HEAD -- hooks/register.tsx'))).toBe(true)
 })
 
