@@ -141,37 +141,52 @@ function folded(pills: Piece[], width: number) {
   return rows.map(r => line(width, r))
 }
 
-function openPanel(v: BandView, fit: Fit): Band {
-  const W = v.width
-  const b = builder()
-  const rule = (title: string) => b.add(runs(sectionRule(title, W), { isDim: true }))
-  if (v.pickers) b.append(layout(v.pickers))
-  if (v.tokens) {
-    const t = tokensRow(v.tokens, v.context, W)
-    b.add(t.row, t.spans)
+/**
+ * The panel's sections, each a block `W` cells wide: the pickers, the tokens and cache, settings, handoff and
+ * next steps. `full` heads each with a divider; `compact` folds the settings and the next steps into pills;
+ * `columns`, for blocks set side by side, folds the settings only.
+ */
+function sections(v: BandView, fit: Fit | 'columns', W: number): { blocks: Grid[]; keys: Record<string, string> } {
+  const blocks: Grid[] = []
+  const keys: Record<string, string> = {}
+  const block = () => {
+    const b = builder()
+    blocks.push(b.grid)
+    return { b, rule: (title: string) => b.add(runs(sectionRule(title, W), { isDim: true })) }
   }
-  if (v.cache) {
-    if (fit === 'full') rule('CACHE')
-    const cacheRight = v.isPinging ? [text('pinging…', { isDim: true })] : [keepWarm(v)].filter((p): p is Piece => p !== null)
-    const c = line(W, [{ runs: v.cache, action: null }], cacheRight)
-    b.add(c.row, c.spans)
-  }
-  if (v.overage) {
-    const o = line(W, [text('⚠ overage', { color: 'warning' }), text(`${v.overage} · a new chat costs less per turn`, { isDim: true })], [pill('New chat', 'newchat', 'subtle')])
-    b.add(o.row, o.spans)
-  }
-  if (fit === 'compact') {
-    for (const r of settingsLines(v, W)) b.add(r.row, r.spans)
-  } else if (v.settings.length > 0) {
-    rule('SETTINGS')
-    for (const s of v.settings) {
-      const r = settingRow(s, W)
-      b.add(r.row, r.spans)
+  if (v.pickers) block().b.append(layout(v.pickers))
+  if (v.tokens || v.cache || v.overage) {
+    const { b, rule } = block()
+    if (v.tokens) {
+      const t = tokensRow(v.tokens, v.context, W)
+      b.add(t.row, t.spans)
+      keys.t = 'tokens'
+    }
+    if (v.cache) {
+      if (fit === 'full') rule('CACHE')
+      const cacheRight = v.isPinging ? [text('pinging…', { isDim: true })] : [keepWarm(v)].filter((p): p is Piece => p !== null)
+      const c = line(W, [{ runs: v.cache, action: null }], cacheRight)
+      b.add(c.row, c.spans)
+    }
+    if (v.overage) {
+      const o = line(W, [text('⚠ overage', { color: 'warning' }), text(`${v.overage} · a new chat costs less per turn`, { isDim: true })], [pill('New chat', 'newchat', 'subtle')])
+      b.add(o.row, o.spans)
     }
   }
-  const keys: Record<string, string> = {}
-  if (v.tokens) keys.t = 'tokens'
+  if (v.settings.length > 0) {
+    const { b, rule } = block()
+    if (fit === 'compact' || fit === 'columns') {
+      for (const r of settingsLines(v, W)) b.add(r.row, r.spans)
+    } else {
+      rule('SETTINGS')
+      for (const s of v.settings) {
+        const r = settingRow(s, W)
+        b.add(r.row, r.spans)
+      }
+    }
+  }
   if (v.handoff) {
+    const { b, rule } = block()
     if (fit === 'full') rule('HANDOFF')
     const h = line(W, [
       text('✦', { color: 'claude' }),
@@ -185,6 +200,7 @@ function openPanel(v: BandView, fit: Fit): Band {
     if (v.handoff.hasNewest) keys.r = 'readhandoff'
   }
   if (v.next && (v.next.items.length > 0 || v.next.note)) {
+    const { b, rule } = block()
     if (fit === 'full') rule('NEXT STEPS')
     if (v.next.items.length === 0) {
       const n = line(W, [text('✦', { color: 'claude' }), text(v.next.note ?? '', { isDim: true })])
@@ -199,10 +215,89 @@ function openPanel(v: BandView, fit: Fit): Band {
     }
     v.next.items.forEach((_, i) => (keys[`${i + 1}`] = `next:${i}`))
   }
+  if (v.keepWarm !== 'none' && !v.isPinging) keys.w = 'keepwarm'
+  return { blocks: blocks.filter(g => g.rows.length > 0), keys }
+}
+
+function openPanel(v: BandView, fit: Fit): Band {
+  const W = v.width
+  const { blocks, keys } = sections(v, fit, W)
+  const b = builder()
+  for (const g of blocks) b.append(g)
   if (fit === 'full') b.add(runs(footerRule('user-hud', W), { isDim: true }))
   const tr = line(W, [], [tab(true)])
   b.add(tr.row, tr.spans)
-  if (v.keepWarm !== 'none' && !v.isPinging) keys.w = 'keepwarm'
+  return { ...b.grid, keys, width: W }
+}
+
+/** Cells between two columns of the wide panel. */
+const COLUMN_GAP = 2
+
+/**
+ * The blocks, in order, split into at most `n` runs: the split whose tallest run is shortest, and of those the
+ * one with the fewest runs, so the panel is as short and then as narrow as it can be.
+ */
+export function splitShortest(heights: readonly number[], n: number): number[][] {
+  let best: number[][] = [heights.map((_, i) => i)]
+  let bestKey = [heights.reduce((a, h) => a + h, 0), 1]
+  const walk = (from: number, runsSoFar: number[][]) => {
+    if (from === heights.length) {
+      const key = [Math.max(...runsSoFar.map(r => r.reduce((a, i) => a + (heights[i] ?? 0), 0))), runsSoFar.length]
+      if (key[0]! < bestKey[0]! || (key[0] === bestKey[0] && key[1]! < bestKey[1]!)) {
+        best = runsSoFar
+        bestKey = key
+      }
+      return
+    }
+    if (runsSoFar.length === n) return
+    for (let to = from + 1; to <= heights.length; to += 1) walk(to, [...runsSoFar, Array.from({ length: to - from }, (_, k) => from + k)])
+  }
+  walk(0, [])
+  return best
+}
+
+/**
+ * The panel's sections side by side in columns `v.width` wide, at most `n` of them. The tab goes under the last
+ * column where that ends short of the others, else on a row of its own.
+ */
+function columnsPanel(v: BandView, n: number): Band {
+  const C = v.width
+  const { blocks, keys } = sections(v, 'columns', C)
+  const cols = splitShortest(
+    blocks.map(g => g.rows.length),
+    n,
+  ).map(run => {
+    const b = builder()
+    for (const i of run) b.append(blocks[i]!)
+    return b
+  })
+  const W = cols.length * C + (cols.length - 1) * COLUMN_GAP
+  const height = Math.max(...cols.map(c => c.grid.rows.length))
+  const last = cols.at(-1)!
+  const isTabTucked = last.grid.rows.length < height
+  if (isTabTucked) {
+    while (last.grid.rows.length < height - 1) last.add(runs(' '.repeat(C)))
+    const t = line(C, [], [tab(true)])
+    last.add(t.row, t.spans)
+  }
+  const b = builder()
+  for (let y = 0; y < height; y += 1) {
+    const row: Run[] = []
+    cols.forEach((c, i) => {
+      if (i > 0) put(row, ' '.repeat(COLUMN_GAP))
+      const cell = c.grid.rows[y] ?? []
+      for (const r of cell) put(row, r.text, r)
+      put(row, ' '.repeat(Math.max(0, C - widthOf(cell))))
+    })
+    b.add(row)
+  }
+  cols.forEach((c, i) => {
+    for (const h of c.grid.hits) b.grid.hits.push({ ...h, x0: h.x0 + i * (C + COLUMN_GAP), x1: h.x1 + i * (C + COLUMN_GAP) })
+  })
+  if (!isTabTucked) {
+    const tr = line(W, [], [tab(true)])
+    b.add(tr.row, tr.spans)
+  }
   return { ...b.grid, keys, width: W }
 }
 
@@ -216,9 +311,11 @@ function clip(g: Band, width: number): Band {
   return { ...g, rows: g.rows.map(r => cut(r, width)), hits, width: Math.min(g.width, width) }
 }
 
-/** The band: the closed row, or the panel at the most generous fit its rows allow. */
+/** The band: the closed row; or the panel, in columns where two fit side by side, else at the most generous fit its rows allow. */
 export function bandGrid(v: BandView): Band {
   if (!v.isOpen) return clip(closedRow(v), v.maxWidth)
+  const columns = Math.floor((v.maxWidth + COLUMN_GAP) / (v.width + COLUMN_GAP))
+  if (columns >= 2) return clip(columnsPanel(v, columns), v.maxWidth)
   for (const fit of ['full', 'tight'] as const) {
     const g = openPanel(v, fit)
     if (g.rows.length <= v.maxRows) return clip(g, v.width)
