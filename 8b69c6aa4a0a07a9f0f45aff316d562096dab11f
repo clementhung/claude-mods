@@ -1,0 +1,35 @@
+plugins/code-reference/hooks/format.ts
+  s_8c2c56e017d837::t_08877a88323abf 5-19,25,27,45-46,56
+plugins/code-reference/tests/format.test.ts
+  s_8c2c56e017d837::t_cc11ca4fe0b1f2 19,30-31
+  s_8c2c56e017d837::t_89625bbac61727 20-23,33-35
+plugins/code-reference/skills/reply-format/SKILL.md
+  s_8c2c56e017d837::t_2769f163f3b45d 30
+  s_8c2c56e017d837::t_cc02f0db808524 14,16-19,23
+plugins/code-reference/tests/register.test.tsx
+  s_8c2c56e017d837::t_0b01384aca54ee 26-28,67,205-226,282,308
+plugins/code-reference/.claude-plugin/plugin.json
+  s_8c2c56e017d837::t_2769f163f3b45d 3
+plugins/code-reference/tests/doc.test.ts
+  s_8c2c56e017d837::t_89625bbac61727 65,74-76
+plugins/code-reference/hooks/doc.ts
+  s_8c2c56e017d837::t_43a994b21845a2 46-47,55
+plugins/code-reference/README.md
+  s_8c2c56e017d837::t_605c8f1293afcb 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "8b69c6aa4a0a07a9f0f45aff316d562096dab11f",
+  "prompts": {},
+  "sessions": {
+    "s_8c2c56e017d837": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7436420d-0c5e-4934-8fd6-6e2affa845da",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "clementhung <clement.hung@foodpanda.com>"
+    }
+  }
+}
