@@ -1,0 +1,53 @@
+plugins/delegator/hooks/register.tsx
+  s_2cb9ca0cb1d287::t_0123101af181bd 325-333,382-390,395-399,403-417
+  s_2cb9ca0cb1d287::t_79cb8671331e7c 459
+  s_2cb9ca0cb1d287::t_feeb6ed7fdc657 460
+  s_2cb9ca0cb1d287::t_1fb82a72a6b72f 2,13-22,29-31,33-34,36-39,45-46,59,66-68,72-77,80-85,105,113-144,171,181-182,193-195,222-231,234,238,240,243,249-251,264,267-317,322-324,418-421,428-431,440,443-444,450-458,461-469,477,487-490,493-494
+plugins/delegator/README.md
+  s_2cb9ca0cb1d287::t_133ac8c9215a4a 3,6-39,47-48,58-60,81-110,113,121-126
+plugins/delegator/tests/agents.test.tsx
+  s_2cb9ca0cb1d287::t_e759b9ae6120fd 1-7,9-375
+  s_2cb9ca0cb1d287::t_1aa9cbf9854cd4 8
+plugins/delegator/hooks/battery.ts
+  s_2cb9ca0cb1d287::t_ec8c75a0402837 1-32
+plugins/delegator/types/index.d.ts
+  s_2cb9ca0cb1d287::t_1aa9cbf9854cd4 1,53-91,99-115
+plugins/delegator/tests/battery.test.ts
+  s_2cb9ca0cb1d287::t_ec8c75a0402837 1-29
+plugins/delegator/hooks/runs.ts
+  s_2cb9ca0cb1d287::t_3be2e6e55ac5c4 1-45,47-49,51-55,57-75,77-145,147-220
+  s_2cb9ca0cb1d287::t_546d37a508792f 146
+  s_2cb9ca0cb1d287::t_1aa9cbf9854cd4 46,50,56,76
+plugins/delegator/.claude-plugin/plugin.json
+  s_2cb9ca0cb1d287::t_0bd796f430ff9f 3,7,15,30-41
+plugins/delegator/hooks/pane.ts
+  s_2cb9ca0cb1d287::t_1b33096675afcb 1-194
+plugins/delegator/hooks/queue.ts
+  s_2cb9ca0cb1d287::t_82679327a51513 2,62,106-119
+plugins/delegator/hooks/sprites.ts
+  s_2cb9ca0cb1d287::t_c526740df42ced 1-96
+plugins/delegator/tests/pane.test.ts
+  s_2cb9ca0cb1d287::t_22615cbc81ea86 1-130
+plugins/delegator/tests/queue.test.ts
+  s_2cb9ca0cb1d287::t_4dddfbac9e7be2 4,23,115-116,123-129
+plugins/delegator/tests/register.test.tsx
+  s_2cb9ca0cb1d287::t_5f217d516fcc9a 34,83,97-98,114,142,175,215,224,231,261
+plugins/delegator/tests/sprites.test.ts
+  s_2cb9ca0cb1d287::t_c06f4b1e15c4c6 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "231ce87389d6f52cafff999003d96cd9838113ac",
+  "prompts": {},
+  "sessions": {
+    "s_2cb9ca0cb1d287": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da42f5d1-fd7a-4937-a72f-0d4147a0df4f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "clementhung <clement.hung@foodpanda.com>"
+    }
+  }
+}
