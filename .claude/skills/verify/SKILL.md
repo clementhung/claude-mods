@@ -103,7 +103,7 @@ Through computer use, with screenshots saved to disk:
 
 ## Helpers
 
-[`scripts/tui.sh`](scripts/tui.sh): `start <name> <cols> <rows> [prompt]`, `type <name> <text>`, `keys <name> <keys…>`, `resize <name> <cols> <rows>`, `shot <name> <label>`, `sweep <name> <label> <cols…>`, `wait <name> <text> [seconds]`, `stop <name>`. Run it with no arguments for the same list.
+[`scripts/tui.sh`](scripts/tui.sh): `start <name> <cols> <rows> [claude args…]`, `type <name> <text>`, `keys <name> <keys…>`, `resize <name> <cols> <rows>`, `shot <name> <label>`, `sweep <name> <label> <cols…>`, `wait <name> <text> [seconds]`, `stop <name>`. Run it with no arguments for the same list.
 
 [`scripts/use-source.sh`](scripts/use-source.sh): no argument reads the installed polar-mods from this checkout; `--github` reads them from `hyperbola-bear/claude-mods` again. Both keep which mods are installed and their saved options.
 

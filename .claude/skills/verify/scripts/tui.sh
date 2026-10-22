@@ -1,7 +1,7 @@
 #!/bin/sh
 # Drives Claude Code in a detached tmux session with this checkout's plugins loaded, and captures what it draws.
 #
-#   tui.sh start  <name> <cols> <rows> [prompt]   launch, wait until the band draws
+#   tui.sh start  <name> <cols> <rows> [args]     launch, wait until the band draws; args go to claude
 #   tui.sh keys   <name> <tmux key>...             send keys (tmux send-keys syntax: "/hud" Enter)
 #   tui.sh type   <name> <text>                    type text literally, then Enter
 #   tui.sh resize <name> <cols> <rows>

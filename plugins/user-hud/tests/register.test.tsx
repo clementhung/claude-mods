@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import type { On, Register, SessionContextBreakdown } from 'claude-code'
 
 import { EFFORT_COLORS, MODEL_COLORS } from '../hooks/selector.ts'
-import { plain, textOf } from '../hooks/cells.ts'
+import { cut, plain, textOf } from '../hooks/cells.ts'
 import type { CellsProps } from '../hooks/cells.ts'
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -706,7 +706,7 @@ test('the corner tab opens and closes the panel, and /hud does the same', async 
     for (const key of ['handoff', 'tokens', 'sessions', 'keepwarm', 'settings']) {
       expect(await has(band, key), key).toBe(true)
     }
-    for (const label of ['Haiku 4.5', 'Fable 5.1', 'Low', 'Ultracode']) {
+    for (const label of ['Haiku', 'Fable', 'Low', 'Ultra']) {
       expect(await shows(band, label), label).toBe(true)
     }
     // Open, the status moves into the panel rather than showing twice.
@@ -804,7 +804,7 @@ test('a surface with no Client (VS Code) gets the same rows as text, and its act
   expect(await band.find({ type: 'Client', key: 'hud' })).toBe(undefined)
   expect((await band.find({ type: 'Button', key: 'panel' }))?.props.label).toBe('▐▛▜▌ user-hud ▴')
   await band.press({ key: 'panel' })
-  expect(await band.find({ type: 'Text', text: /Haiku 4\.5/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: /Haiku/ })).toBeTruthy()
   expect((await band.find({ type: 'Button', key: 'handoff' }))?.props.hotkey).toBe('h')
   await band.press({ key: 'pick:model:sonnet' })
   expect(w.commandLines).toEqual(['/model sonnet'])
@@ -922,6 +922,24 @@ for (const selectorStyle of ['rail', 'ladder', 'meter'] as const) {
     expect(drawn[1]).toBe(drawn[0])
   })
 }
+
+test('at two cards across, the Rail draws its shortened labels the same on the terminal and the desktop', { options: { selectorStyle: 'rail' } }, async ($, on) => {
+  world(on)
+  await start($)
+  // 49 cells a card at 100 columns, 39 at 80.
+  for (const bodyColumns of [100, 80]) {
+    const drawn: string[] = []
+    for (const surface of SURFACES) {
+      const band = await $.ui.mount({ plugin: 'user-hud', surface, component: 'AbovePrompt', props: { ...BAND(), maxRows: 30, bodyColumns } })
+      await openPanel(band)
+      expect(await styleOf(band), `${surface} at ${bodyColumns}`).toBe('rail')
+      drawn.push(shape(await band.drawn({ in: 'hud' })))
+      await act(band, 'panel')
+      await band.unmount()
+    }
+    expect(drawn[1], `at ${bodyColumns}`).toBe(drawn[0])
+  }
+})
 
 test('the Picker style row cycles Rail, Ladder, Meter and writes its /config row', async ($, on) => {
   const w = world(on)
@@ -1110,10 +1128,10 @@ test('the CONTEXT card shows the battery and the split, and opens the Tokens pan
     const band = await $.ui.mount({ plugin: 'user-hud', surface, component: 'AbovePrompt', props: { ...BAND(), maxRows: 30 } })
     expect(await shows(band, '77k tokens')).toBe(true)
     await openPanel(band)
-    // The stacked bar: a run of cells per group in its colour, 16 cells in all, in the CONTEXT card.
+    // The stacked bar: a run of cells per group in its colour, 16 cells in all, before the CONTEXT card's total.
     const g = (await cellsOf(band))!
-    const usedRow = g.rows[plain(g).findIndex(l => l.includes('77k used'))]!
-    const segments = usedRow.filter(r => r.bg.startsWith('#'))
+    const y = plain(g).findIndex(l => l.includes('77k used'))
+    const segments = cut(g.rows[y]!, plain(g)[y]!.indexOf('77k used')).filter(r => r.bg.startsWith('#'))
     expect(segments.length).toBeGreaterThan(3)
     expect(segments.reduce((n, r) => n + r.text.length, 0)).toBe(16)
     expect(segments.map(r => r.bg)).toContain('#3987e5')
@@ -1166,17 +1184,20 @@ test('a compaction empties what the groups hold in the context and keeps what th
 test('where a two-row style’s columns do not fit, both pickers fall back to the Ladder together', async ($, on) => {
   const w = world(on)
   await start($)
-  for (const [columns, style] of [[68, 'rail'], [62, 'ladder'], [110, 'ladder']] as const) {
+  // Below 27 cells the models fit none of their label sets, though the effort's shortest still would.
+  for (const [columns, style, labels] of [[27, 'rail', /^Haiku +Sonnet +Opus +Fable/], [26, 'ladder', /▄ Haiku 4\.5/], [68, 'rail', /Haiku 4\.5 +Sonnet 5\.5/]] as const) {
     const band = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND(), maxRows: 30, bodyColumns: columns } })
     await openPanel(band)
     expect(await styleOf(band), `at ${columns}`).toBe(style)
-    // The style row still names the one chosen.
-    await act(band, 'settings')
-    expect((await labelOf(band, 'set:selectorStyle'))).toBe('Rail')
-    await act(band, 'settings')
+    expect(await shows(band, labels), `at ${columns}`).toBe(true)
     await act(band, 'panel')
     await band.unmount()
   }
+  // The style row still names the one chosen.
+  const band = await $.ui.mount({ plugin: 'user-hud', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND(), maxRows: 30, bodyColumns: 68 } })
+  await openPanel(band)
+  await act(band, 'settings')
+  expect((await labelOf(band, 'set:selectorStyle'))).toBe('Rail')
   expect(w.configSets).toEqual([])
 })
 

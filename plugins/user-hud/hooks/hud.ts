@@ -3,12 +3,12 @@ import type { Effort } from '../types'
 import { put, widthOf } from './cells.ts'
 import type { Piece, Run, Span } from './cells.ts'
 
-/** The models the panel offers: the `/model` alias it runs, and the name it shows. */
+/** The models the panel offers: the `/model` alias it runs, the name it shows, and that name without its version. */
 export const MODELS = [
-  { alias: 'haiku', label: 'Haiku 4.5' },
-  { alias: 'sonnet', label: 'Sonnet 5.5' },
-  { alias: 'opus', label: 'Opus 5.5' },
-  { alias: 'fable', label: 'Fable 5.1' },
+  { alias: 'haiku', label: 'Haiku 4.5', family: 'Haiku' },
+  { alias: 'sonnet', label: 'Sonnet 5.5', family: 'Sonnet' },
+  { alias: 'opus', label: 'Opus 5.5', family: 'Opus' },
+  { alias: 'fable', label: 'Fable 5.1', family: 'Fable' },
 ] as const
 
 export const EFFORTS: readonly { level: Effort; label: string }[] = [

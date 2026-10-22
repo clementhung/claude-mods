@@ -111,7 +111,7 @@ Three styles; **Picker style** in the settings (or in `/config`) switches betwee
 - **Ladder**: one row. Before each label a strip that grows a cell per step up, in that step's colours; the chosen one is full blocks, the others half blocks. The most compact.
 - **Meter**: bars that rise step by step over the labels, like a signal meter. Every step up to the chosen one is lit in its colours; the ones past it are dim. Two rows a picker.
 
-The pickers are part of the band's grid: click an option to pick it, or move to it with the arrow keys and press Return. A two-row style needs a card 67 cells wide; in a narrower card the pickers fall back to the Ladder, which wraps. Folded, the card shows the model and effort as text, and `m` opens `/hud-styles`.
+The pickers are part of the band's grid: click an option to pick it, or move to it with the arrow keys and press Return. A two-row style shows the MODEL and EFFORT names beside the steps in a card 67 cells wide or more. In a narrower card the names go first, then the labels shorten: `Sonnet 5.5` to `Sonnet`, `Ultracode` to `Ultra`, `Medium` to `Med`. Under 27 cells the pickers fall back to the Ladder, which wraps. Folded, the card shows the model and effort as text, and `m` opens `/hud-styles`.
 
 ## Sessions
 

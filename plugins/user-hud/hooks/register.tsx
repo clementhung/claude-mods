@@ -97,7 +97,7 @@ import type { Level } from './cache.ts'
 import { HANDOFF_DIRS, age, handoffPrompt, handoffTarget, isHandoffName, joinPath, newest, resumePrompt } from './handoff.ts'
 import { MODELS, MODULES, asEffort, lifeBar, modelAlias, modelLabel, modulesFrom, modulesText, nextWarn, parseHudArgs, pieOf } from './hud.ts'
 import type { ModuleId, Modules } from './hud.ts'
-import { EFFORT_COLORS, EFFORT_STEPS, MODEL_COLORS, SELECTOR_STYLES, asStyle, effortStep, nextStyle, parseEffortArgs, spread, styleLabel, ultracodeTook } from './selector.ts'
+import { EFFORT_COLORS, EFFORT_SHORT_LABELS, EFFORT_STEPS, MODEL_COLORS, SELECTOR_STYLES, asStyle, effortStep, nextStyle, parseEffortArgs, spread, styleLabel, ultracodeTook } from './selector.ts'
 import type { EffortStep } from './selector.ts'
 import { builder, line, order, piece, put, runs, textOf, wrap } from './cells.ts'
 import type { CellsProps, Run } from './cells.ts'
@@ -415,8 +415,18 @@ function gridFields(hud: HudState): GridField[] {
   const alias = modelAlias(hud.model)
   const step = effortStep(hud.effort, hud.ultracode)
   return [
-    { kind: 'model', name: 'MODEL', options: MODELS.map(m => ({ id: m.alias, label: m.label, colors: [MODEL_COLORS[m.alias] ?? '#888888'], isOn: alias === m.alias })) },
-    { kind: 'effort', name: 'EFFORT', options: EFFORT_STEPS.map(f => ({ id: f.step, label: f.label, colors: [...EFFORT_COLORS[f.step]], isOn: step === f.step })) },
+    {
+      kind: 'model',
+      name: 'MODEL',
+      options: MODELS.map(m => ({ id: m.alias, label: m.label, colors: [MODEL_COLORS[m.alias] ?? '#888888'], isOn: alias === m.alias })),
+      shorter: [MODELS.map(m => m.family)],
+    },
+    {
+      kind: 'effort',
+      name: 'EFFORT',
+      options: EFFORT_STEPS.map(f => ({ id: f.step, label: f.label, colors: [...EFFORT_COLORS[f.step]], isOn: step === f.step })),
+      shorter: EFFORT_SHORT_LABELS,
+    },
   ]
 }
 

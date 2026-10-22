@@ -36,6 +36,7 @@ Preconditions:
 - **Open.** Run `tui.sh type hud "/hud"`. The screen shows `user-hud panel open.` and the cards, with `⚙ s: Settings` and `▐▛▜▌ user-hud ▾` on the bottom row.
 - **Columns.** Run `tui.sh sweep hud open 160 100 60`. Two columns of cards at 100 and 160 (`── S E S S I O N S …` and `── C O N T E X T …` on one row), one column at 60.
 - **Short band.** Run `tui.sh resize hud 100 24`, then `tui.sh shot hud open-short`. Every card is one row (`SESSIONS … asleep`, `CONTEXT ▕…▏`), the band no taller than before the prompt.
+- **Pickers in cards.** Rail is the default style. Run `tui.sh sweep hud open 160 120 100 80`. Each capture shows a model row of `Haiku … Fable` over a `▔` bar, not the Ladder's `▄` strips. Two-column cards of about 49 cells keep the versions (`Haiku 4.5`). Narrower cards drop them (`Haiku`) and shorten the effort labels, `Ultra` first and then `Med`. For Meter, start a second session with `--settings '{"pluginConfigs":{"user-hud@inline":{"options":{"selectorStyle":"meter"}}}}'`, which changes no saved setting, and sweep again: the bars use `▁` to `▇`.
 - **Settings.** Focus the band and run `tui.sh keys hud s`. The settings rows show and the bar reads `⚙ s: Back`. Press `s` again to return.
 - **Sessions pane.** With the band focused, run `tui.sh keys hud e`. A pane titled `Sessions` lists NEEDS YOU, WORKING, DONE, ASLEEP and THIS SESSION, each title at most 30 characters.
 - **Guesses.** Send a prompt that forces a choice, such as `tui.sh type hud "rename the main branch to trunk in a repo you pick"`. If Claude calls the `assumption` tool, the closed row shows `? N to check` and the card lists the guesses. Press `✗` on one (click its cells, or arrow to it and Return): the prompt box holds `Not quite: "<guess>". `. Clear the box before the next step.
@@ -47,7 +48,9 @@ On the desktop, run the same steps through computer use in a Code session of thi
 ## Gotchas
 
 - Nothing is counted before the session's first request: the context card reads `known after a reply` and the pickers have no effort highlight yet. Send one short prompt before proving those.
-- The terminal draws the band only in the area the app gives it. With a docked pane (filetree, delegator) beside the transcript, the band is narrower than the window.
+- The terminal draws the band only in the area the app gives it, a few columns narrower than the window. With a docked pane (filetree, delegator) beside the transcript, it is narrower still. To keep filetree's pane out, start with `tui.sh start hud 160 50 --settings '{"enabledPlugins":{"filetree@claude-code-filetree":false}}'`.
+- The panel remembers whether it was open. If `/hud` answers `user-hud panel closed.`, type it again.
+- On a short band every card folds to one row, so a full card (the pickers, the guesses) needs a tall window: `tui.sh resize hud 70 90`.
 - Sessions refresh every 5 seconds and titles once a minute. Wait for the next refresh before asserting a change.
 - A waiting session in the person's list may be days old. It is real data; don't try to answer it.
 - `[-]` at the band's right end is Claude Code's own collapse control, not the plugin's.

@@ -6,7 +6,7 @@ import { cut, line, piece, plain, runs, textOf, underlined, widthOf, wrap } from
 import { MODELS } from '../hooks/hud.ts'
 import { CARD_ORDER, bandGrid, cardLayout, cardsOf } from '../hooks/panelgrid.ts'
 import type { BandView } from '../hooks/panelgrid.ts'
-import { EFFORT_COLORS, EFFORT_STEPS, MODEL_COLORS } from '../hooks/selector.ts'
+import { EFFORT_COLORS, EFFORT_SHORT_LABELS, EFFORT_STEPS, MODEL_COLORS } from '../hooks/selector.ts'
 import { grouped } from '../hooks/sessions.ts'
 
 const NOW = Date.parse('2026-10-22T09:00:00Z')
@@ -36,8 +36,18 @@ const SESSIONS = grouped(
 )
 
 const FIELDS = [
-  { kind: 'model' as const, name: 'MODEL', options: MODELS.map(m => ({ id: m.alias, label: m.label, colors: [MODEL_COLORS[m.alias]!], isOn: m.alias === 'opus' })) },
-  { kind: 'effort' as const, name: 'EFFORT', options: EFFORT_STEPS.map(f => ({ id: f.step, label: f.label, colors: [...EFFORT_COLORS[f.step]], isOn: f.step === 'xhigh' })) },
+  {
+    kind: 'model' as const,
+    name: 'MODEL',
+    options: MODELS.map(m => ({ id: m.alias, label: m.label, colors: [MODEL_COLORS[m.alias]!], isOn: m.alias === 'opus' })),
+    shorter: [MODELS.map(m => m.family)],
+  },
+  {
+    kind: 'effort' as const,
+    name: 'EFFORT',
+    options: EFFORT_STEPS.map(f => ({ id: f.step, label: f.label, colors: [...EFFORT_COLORS[f.step]], isOn: f.step === 'xhigh' })),
+    shorter: EFFORT_SHORT_LABELS,
+  },
 ]
 
 /** Every module on, with something to show in each. */
@@ -198,11 +208,14 @@ test('pressed to the front, the guesses stay in full while the rest fold, so a 1
   expect(bandGrid({ ...VIEW, columns: 100, maxRows: 12 }).hits.some(h => h.id.startsWith('assume:right'))).toBe(false)
 })
 
-test('the model card draws the Rail from 67 cells across and the Ladder below', () => {
-  const card = (w: number) => plain(cardsOf(VIEW, w).find(c => c.id === 'model')!.full)
-  expect(card(67).join('\n')).toContain('▔')
-  expect(card(66).join('\n')).not.toContain('▔')
-  expect(card(66).join('\n')).toMatch(/▄ Haiku 4\.5/)
+test('the model card draws the Rail with the names from 67 cells across, without them down to 27, and the Ladder below', () => {
+  const card = (w: number) => plain(cardsOf(VIEW, w).find(c => c.id === 'model')!.full).join('\n')
+  expect(card(67)).toMatch(/^MODEL .*Haiku 4\.5/m)
+  expect(card(66)).toContain('▔')
+  expect(card(66)).not.toMatch(/^MODEL /m)
+  expect(card(27)).toContain('▔')
+  expect(card(26)).not.toContain('▔')
+  expect(card(26)).toMatch(/▄ Haiku 4\.5/)
 })
 
 test('the guesses card: each guess with ✓ and ✗ before it, three at most', () => {
