@@ -1,0 +1,52 @@
+.claude/skills/verify/scripts/use-source.sh
+  s_2cb9ca0cb1d287::t_2ccccbce08ddd6 1-40
+.claude/skills/verify/features/ask.md
+  s_2cb9ca0cb1d287::t_04cabcf404c33f 1-42
+.claude-plugin/marketplace.json
+  s_2cb9ca0cb1d287::t_26dcfbcac8e0a0 11,26
+.claude/skills/verify/features/code-reference.md
+  s_2cb9ca0cb1d287::t_70d001dd778793 1-39
+.claude/skills/verify/features/user-hud.md
+  s_2cb9ca0cb1d287::t_4e50a720e2d24d 1-53
+.claude/skills/verify/scripts/tui.sh
+  s_2cb9ca0cb1d287::t_defeae6857267f 74-85
+  s_2cb9ca0cb1d287::t_02d00672445b64 73
+  s_2cb9ca0cb1d287::t_8cf691d6a09ca1 9,41-51,102
+  s_2cb9ca0cb1d287::t_61363762f4b689 19,25,29-32,34,36-37,53-57
+  s_2cb9ca0cb1d287::t_2df58cee2fb1da 1-8,10-18,20-24,26-28,33,35,38-40,52,58-72,86-101,103-108
+README.md
+  s_2cb9ca0cb1d287::t_4fb2de7cc5b22f 45
+  s_2cb9ca0cb1d287::t_26dcfbcac8e0a0 7,10,12,25
+  s_2cb9ca0cb1d287::t_67ebcda709b294 71-72
+.claude/skills/verify/features/delegator.md
+  s_2cb9ca0cb1d287::t_0501ab684bd92d 1-49
+.claude/skills/verify/scripts/tmux.conf
+  s_2cb9ca0cb1d287::t_61363762f4b689 1-3
+.claude/skills/verify/SKILL.md
+  s_2cb9ca0cb1d287::t_b386d725b6bda2 39
+  s_2cb9ca0cb1d287::t_2dc3f5e4c8b785 1-38,40-45,47-48,50-90,93-106,109-122
+  s_2cb9ca0cb1d287::t_09962f842a0882 91
+  s_2cb9ca0cb1d287::t_5ec44a3d7053b2 92
+  s_2cb9ca0cb1d287::t_d700f09f75587b 46,107-108
+  s_2cb9ca0cb1d287::t_80570a9f016ff8 49
+.claude/skills/verify/features/README.md
+  s_2cb9ca0cb1d287::t_f90e9e94a56fec 1-36
+mods
+  s_2cb9ca0cb1d287::t_056812c686223e 5-6,27-28,247-258,316-317,332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9a1c77fa8f589b7071faa077a841ba9f5e406d9e",
+  "prompts": {},
+  "sessions": {
+    "s_2cb9ca0cb1d287": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da42f5d1-fd7a-4937-a72f-0d4147a0df4f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "clementhung <clement.hung@foodpanda.com>"
+    }
+  }
+}
