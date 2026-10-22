@@ -1,0 +1,23 @@
+plugins/user-hud/tests/panelgrid.test.ts
+  s_2cb9ca0cb1d287::t_8aa979514e1693 314,322
+  s_2cb9ca0cb1d287::t_729dc66f7e02b5 315-321
+plugins/user-hud/tests/register.test.tsx
+  s_2cb9ca0cb1d287::t_729dc66f7e02b5 800,806,812,817
+  s_2cb9ca0cb1d287::t_b71536c3c0d184 801-805,807-811,813-816,818-820
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "469809d642c054d53d35f1185e9a73e19a4743d8",
+  "prompts": {},
+  "sessions": {
+    "s_2cb9ca0cb1d287": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da42f5d1-fd7a-4937-a72f-0d4147a0df4f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "clementhung <clement.hung@foodpanda.com>"
+    }
+  }
+}
