@@ -311,3 +311,12 @@ test('the action under the pointer is underlined, its spaces left plain', () => 
   const rows = underlined({ rows: [l.row], hits: [{ id: 'go', y: 0, ...l.spans[0]! }] }, 'go')
   expect(rows[0]!.filter(r => r.isUnderline).map(r => r.text)).toEqual(['Go'])
 })
+
+test('wide: the cards go side by side in fewer rows than one column, every action and hotkey kept', () => {
+  const one = bandGrid({ ...VIEW, columns: 60, maxRows: 40 })
+  const wide = bandGrid({ ...VIEW, columns: 200, maxRows: 40 })
+  expect(wide.rows.length).toBeLessThan(one.rows.length)
+  for (const l of plain(wide)) expect(l.length).toBeLessThanOrEqual(200)
+  expect(new Set(wide.hits.map(h => h.id))).toEqual(new Set(one.hits.map(h => h.id)))
+  expect(wide.keys).toEqual(one.keys)
+})

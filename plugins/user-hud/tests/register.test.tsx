@@ -797,6 +797,27 @@ test('the whole band is one grid of cells, the same on the terminal and the desk
   for (const view of ['closed', 'cards', 'settings']) expect(drawn[`desktop-${view}`], view).toBe(drawn[`terminal-${view}`])
 })
 
+test('a wide window: the open panel spreads its cards side by side and stays short, the same on both surfaces', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await request($, w, 120_000)
+  const heights: Record<string, number> = {}
+  for (const surface of SURFACES) {
+    for (const bodyColumns of [60, 200]) {
+      const band = await $.ui.mount({ plugin: 'user-hud', surface, component: 'AbovePrompt', props: { ...BAND(), bodyColumns, maxRows: 30 } })
+      await openPanel(band)
+      const g = (await cellsOf(band))!
+      heights[`${surface}-${bodyColumns}`] = g.rows.length
+      for (const l of plain(g)) expect(l.length).toBeLessThanOrEqual(bodyColumns)
+      expect(await labelOf(band, 'settings')).toBeTruthy()
+      await act(band, 'panel')
+      await band.unmount()
+    }
+  }
+  expect(heights['terminal-200']).toBeLessThan(heights['terminal-60']!)
+  expect(heights['desktop-200']).toBe(heights['terminal-200'])
+})
+
 test('a surface with no Client (VS Code) gets the same rows as text, and its actions as buttons', async ($, on) => {
   const w = world(on)
   await start($)
