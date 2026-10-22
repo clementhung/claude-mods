@@ -139,3 +139,26 @@ test('narrow: no row wider than the band region, open or closed, so nothing fall
   }
   expect(over).toEqual([])
 })
+
+test('wide: the sections go side by side in as few rows as fit, every action and hotkey kept', () => {
+  const view = { ...VIEW, next: { items: ['Run the tests', 'Commit this', 'Open a PR'], note: null } }
+  const tall = bandGrid(view)
+  const wide = bandGrid({ ...view, maxWidth: 200 })
+  // Two 72-cell columns with 2 between: the pickers and tokens and cache, then settings, handoff and next steps.
+  expect(wide.width).toBe(146)
+  for (const l of plain(wide)) expect(l.length).toBe(146)
+  // The tab sits under the shorter column, so no row is spent on it alone.
+  expect(wide.rows.length).toBe(6)
+  expect(wide.rows.length).toBeLessThan(tall.rows.length)
+  expect(plain(wide)[0]).toMatch(/^MODEL .{66} {2}( ● Alert sound .*| .*)$/)
+  expect(plain(wide).at(-1)).toMatch(/ ◆ user-hud ▾ $/)
+  expect(new Set(wide.hits.map(h => h.id))).toEqual(new Set(tall.hits.map(h => h.id)))
+  expect(wide.keys).toEqual(tall.keys)
+  for (const h of wide.hits) expect(h.x1).toBeLessThanOrEqual(146)
+  // A third column is used only where it makes the band shorter still.
+  const wider = bandGrid({ ...view, maxWidth: 300 })
+  expect(wider.rows.length).toBeLessThanOrEqual(wide.rows.length)
+  if (wider.rows.length === wide.rows.length) expect(wider.width).toBe(146)
+  // Not room for two columns: the one-column panel, unchanged.
+  expect(plain(bandGrid({ ...view, maxWidth: 145 }))).toEqual(plain(tall))
+})
